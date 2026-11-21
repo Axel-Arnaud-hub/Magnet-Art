@@ -1,0 +1,242 @@
+/* Pages de contenu : thème clair du prototype Aimantarium.
+   Tout est confiné à .page pour ne pas toucher au bac à sable (plein écran sombre). */
+
+.page {
+  --paper: #f4efe6;
+  --card: #fbf8f2;
+  --ink: #17140f;
+  --ink2: #4a443a;
+  --ink3: #8a8275;
+  --rule: #d8cfbf;
+  --red: #d7301f;
+  --blue: #1f4e9c;
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  color-scheme: light;
+}
+
+.page a {
+  color: var(--blue);
+}
+
+.page-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.page .brand {
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+  font-size: 18px;
+}
+
+.page-top nav {
+  display: flex;
+  gap: 18px;
+}
+
+.page-top nav a {
+  color: var(--ink2);
+  text-decoration: none;
+}
+
+.page-top nav a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: inset 0 -2px var(--red);
+}
+
+.page-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.page h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.1;
+  margin: 0 0 16px;
+  max-width: 22ch;
+}
+
+.kicker {
+  margin: 0 0 10px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.lead {
+  color: var(--ink2);
+  max-width: 60ch;
+}
+
+/* ---- accueil ---- */
+
+.doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.page .door {
+  display: block;
+  padding: 22px;
+  background: var(--card);
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  text-decoration: none;
+  transition: transform 0.12s;
+}
+
+.page .door:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.door-n {
+  font-weight: 800;
+  color: var(--red);
+}
+
+.door h2 {
+  margin: 6px 0 8px;
+}
+
+.door p {
+  color: var(--ink2);
+  margin: 0 0 14px;
+}
+
+/* ---- découverte ---- */
+
+.how {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0 28px;
+}
+
+.how span {
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  background: var(--card);
+}
+
+.how b {
+  color: var(--red);
+  margin-right: 4px;
+}
+
+.chapters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.chapter {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+}
+
+.chapter-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+}
+
+.chapter-n {
+  font-weight: 800;
+  color: var(--ink3);
+  font-size: 14px;
+}
+
+.chapter-level {
+  margin: 8px 0 0;
+  color: var(--ink3);
+  font-size: 13px;
+}
+
+.chapter h2 {
+  margin: 4px 0 6px;
+  font-size: 20px;
+}
+
+.chapter p {
+  margin: 0 0 10px;
+  color: var(--ink2);
+}
+
+.chapter-qty {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.chapter-qty span {
+  min-width: 28px;
+  padding: 1px 6px;
+  border: 1px solid var(--ink);
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.page .chapter-bottom {
+  margin: 12px 0 0;
+  color: var(--ink3);
+  font-size: 13px;
+}
+
+.carnet {
+  margin: 48px 0 24px;
+}
+
+.carnet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.carnet-card {
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  background: var(--card);
+}
+
+.carnet-card b {
+  display: block;
+  font-size: 22px;
+  color: var(--red);
+}
+
+.carnet-card p {
+  margin: 4px 0 0;
+  color: var(--ink2);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .page-top {
+    padding: 12px 16px;
+  }
+
+  .page-main {
+    padding: 28px 16px 48px;
+  }
+}

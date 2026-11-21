@@ -68,6 +68,9 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
         <button className="ghost" onClick={() => setOpen(!open)} title="Afficher / masquer" aria-label={open ? 'Replier' : 'Déplier'}>
           {open ? '–' : '+'}
         </button>
+        <a className="ghost home" href="#accueil" title="Retour à l’accueil" aria-label="Retour à l’accueil">
+          ←
+        </a>
         <span className="stats">
           t {(stats.t * 1e9).toFixed(2)} ns · ⟨mz⟩ {stats.mz.toFixed(2)} · Q {stats.Q.toFixed(2)}
         </span>

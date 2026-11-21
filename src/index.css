@@ -214,6 +214,17 @@ button.play {
   font-size: 11px;
 }
 
+a.home {
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+a.home:hover {
+  color: var(--fg);
+}
+
 /* ---- curseurs, choix, joystick ---- */
 
 .slider {
@@ -359,7 +370,8 @@ button.link {
     z-index: 1;
   }
 
-  button.ghost {
+  button.ghost,
+  a.home {
     font-size: 20px;
     min-width: 36px;
     min-height: 36px;
