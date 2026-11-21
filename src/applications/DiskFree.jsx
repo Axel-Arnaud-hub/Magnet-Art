@@ -7,7 +7,7 @@ import './applications.css'
 
 // « Pour aller plus loin » du disque dur (Aimantarium V19) : la même lettre
 // écrite sur trois pistes, puis relue après dix ans simulés. Le balisage
-// est celui du prototype ; DiskPlayground le pilote. Magnet'Art ajoute le fil
+// est celui du prototype ; DiskPlayground le pilote. Aimantarium ajoute le fil
 // conducteur (le défi des ingénieurs) et ce que montre chaque piste.
 
 // Ce que chaque piste permet de montrer, dans l'ordre de l'histoire.

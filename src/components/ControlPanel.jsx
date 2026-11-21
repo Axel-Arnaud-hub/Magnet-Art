@@ -49,7 +49,28 @@ function Group({ title, children }) {
 
 const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
 
-export default function ControlPanel({ world, onWorld, phys, setPhys, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, tool, setTool, audio, setAudio, phone, setPhone, phoneDelta, onRecalibrate, onStartMeasure }) {
+export default function ControlPanel({
+  world,
+  onWorld,
+  phys,
+  setPhys,
+  running,
+  onLaunch,
+  onToggle,
+  view,
+  setView,
+  speed,
+  setSpeed,
+  tool,
+  setTool,
+  audio,
+  setAudio,
+  phone,
+  setPhone,
+  phoneDelta,
+  onRecalibrate,
+  onStartMeasure,
+}) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
 
@@ -67,19 +88,21 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
   return (
     <aside className={'panel' + (open ? '' : ' closed')}>
       <header>
-        <button className="ghost" onClick={() => setOpen(!open)} title="Afficher / masquer" aria-label={open ? 'Replier' : 'Déplier'}>
+        <button
+          className="ghost"
+          onClick={() => setOpen(!open)}
+          title="Afficher / masquer les réglages"
+          aria-label={open ? 'Replier les réglages' : 'Déplier les réglages'}
+        >
           {open ? '–' : '+'}
         </button>
-        <a className="home" href="#accueil" title="Quitter le bac à sable : retour à l’accueil" aria-label="Retour à l’accueil">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 11.5 12 4l9 7.5" />
-            <path d="M5.5 10v9.5h5v-5.5h3v5.5h5V10" />
-          </svg>
-        </a>
-        <span className="stats">
-          t {(stats.t * 1e9).toFixed(2)} ns · ⟨mz⟩ {stats.mz.toFixed(2)} · Q {stats.Q.toFixed(2)}
-        </span>
-        <button className="ghost play" onClick={onToggle} aria-label={running ? 'Pause' : 'Reprendre'}>
+        <span className="panel-title">Réglages</span>
+        <button
+          className="ghost play"
+          onClick={onToggle}
+          aria-label={running ? 'Pause' : 'Reprendre'}
+          title={running ? 'Pause (Espace)' : 'Reprendre (Espace)'}
+        >
           {running ? '❚❚' : '▶'}
         </button>
       </header>
@@ -167,58 +190,70 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
           </Group>
 
           {!wallWorld && (
-          <Group title="Interaction">
-            <Segmented
-              options={[
-                ['magnet', 'Aimant'],
-                ['skyrmion', 'Skyrmion'],
-              ]}
-              value={tool.kind}
-              onChange={(kind) => setTool({ ...tool, kind })}
-            />
-            {tool.kind === 'magnet' && (
-              <>
-                <Slider label="Force" unit="mT" min={0} max={5000} step={100} value={Number(tool.strength)} onChange={(strength) => setTool({ ...tool, strength })} />
-                <Segmented
-                  options={[
-                    ['N', 'Nord (B ↓)'],
-                    ['S', 'Sud (B ↑)'],
-                  ]}
-                  value={tool.pole}
-                  onChange={(pole) => setTool({ ...tool, pole })}
-                />
-              </>
-            )}
-            <p className="hint">
-              {tool.kind === 'magnet' ? 'L’aimant suit la souris, ou le doigt posé sur l’écran' : 'Toucher le film : injecter un skyrmion'}
-            </p>
-          </Group>
+            <Group title="Interaction">
+              <Segmented
+                options={[
+                  ['magnet', 'Aimant'],
+                  ['skyrmion', 'Skyrmion'],
+                ]}
+                value={tool.kind}
+                onChange={(kind) => setTool({ ...tool, kind })}
+              />
+              {tool.kind === 'magnet' && (
+                <>
+                  <Slider
+                    label="Force"
+                    unit="mT"
+                    min={0}
+                    max={5000}
+                    step={100}
+                    value={Number(tool.strength)}
+                    onChange={(strength) => setTool({ ...tool, strength })}
+                  />
+                  <Segmented
+                    options={[
+                      ['N', 'Nord (B ↓)'],
+                      ['S', 'Sud (B ↑)'],
+                    ]}
+                    value={tool.pole}
+                    onChange={(pole) => setTool({ ...tool, pole })}
+                  />
+                </>
+              )}
+              <p className="hint">
+                {tool.kind === 'magnet' ? 'L’aimant suit la souris, ou le doigt posé sur l’écran' : 'Toucher le film : injecter un skyrmion'}
+              </p>
+            </Group>
           )}
 
           <Group title="Affichage">
             {!wallWorld && (
-            <>
-            <label className="row">
-              <span className="lbl">Voir</span>
-              <select value={view.mode} onChange={(e) => setView({ ...view, mode: e.target.value })}>
-                <option value="wheel">Direction</option>
-                <option value="mz">mz</option>
-                <option value="mx">mx</option>
-                <option value="my">my</option>
-              </select>
-            </label>
-            <label className="row">
-              <span className="lbl">Palette</span>
-              <select value={paletteId} onChange={(e) => setView({ ...view, [paletteKey]: e.target.value })}>
-                {paletteIds.map((id) => <option key={id} value={id}>{PALETTES[id].label}</option>)}
-              </select>
-            </label>
-            <div className="swatch" style={{ background: gradient(paletteId) }} />
-            <label className="row check">
-              <input type="checkbox" checked={view.arrows} onChange={(e) => setView({ ...view, arrows: e.target.checked })} />
-              <span>Flèches</span>
-            </label>
-            </>
+              <>
+                <label className="row">
+                  <span className="lbl">Voir</span>
+                  <select value={view.mode} onChange={(e) => setView({ ...view, mode: e.target.value })}>
+                    <option value="wheel">Direction</option>
+                    <option value="mz">mz</option>
+                    <option value="mx">mx</option>
+                    <option value="my">my</option>
+                  </select>
+                </label>
+                <label className="row">
+                  <span className="lbl">Palette</span>
+                  <select value={paletteId} onChange={(e) => setView({ ...view, [paletteKey]: e.target.value })}>
+                    {paletteIds.map((id) => (
+                      <option key={id} value={id}>
+                        {PALETTES[id].label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="swatch" style={{ background: gradient(paletteId) }} />
+                <label className="row check">
+                  <input type="checkbox" checked={view.arrows} onChange={(e) => setView({ ...view, arrows: e.target.checked })} />
+                  <span>Flèches</span>
+                </label>
+              </>
             )}
             <label className="row">
               <span className="lbl">Vitesse</span>
@@ -236,13 +271,24 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
               <>
                 <label className="row">
                   <span className="lbl">Volume</span>
-                  <input type="range" min="0" max="1" step="0.05" value={audio.volume} onChange={(e) => setAudio({ ...audio, volume: Number(e.target.value) })} />
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={audio.volume}
+                    onChange={(e) => setAudio({ ...audio, volume: Number(e.target.value) })}
+                  />
                   <span className="unit">{Math.round(audio.volume * 100)}</span>
                 </label>
                 <label className="row">
                   <span className="lbl">Gamme</span>
                   <select value={audio.scale} onChange={(e) => setAudio({ ...audio, scale: e.target.value })}>
-                    {Object.entries(SCALES).map(([id, sc]) => <option key={id} value={id}>{sc.label}</option>)}
+                    {Object.entries(SCALES).map(([id, sc]) => (
+                      <option key={id} value={id}>
+                        {sc.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </>
@@ -253,7 +299,9 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
             <button className="primary" onClick={onLaunch} title="Relancer (R)">
               Relancer
             </button>
-            <button onClick={onToggle} title="Pause (Espace)">{running ? 'Pause' : 'Reprendre'}</button>
+            <button onClick={onToggle} title="Pause (Espace)">
+              {running ? 'Pause' : 'Reprendre'}
+            </button>
           </div>
         </div>
       )}

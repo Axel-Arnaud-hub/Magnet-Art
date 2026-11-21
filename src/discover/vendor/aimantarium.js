@@ -4266,9 +4266,10 @@ class CurieSim extends SimBase {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     const g = ctx.createLinearGradient(0, y + h, 0, y);
-    g.addColorStop(0, guided ? '#a6c4a1' : PAL.blue);
-    g.addColorStop(0.5, guided ? '#488678' : '#8E4A8C');
-    g.addColorStop(1, guided ? '#193437' : PAL.red);
+    // Aimantarium : pas de vert dans la charte, même dans la Découverte.
+    g.addColorStop(0, PAL.blue);
+    g.addColorStop(0.5, '#8E4A8C');
+    g.addColorStop(1, PAL.red);
     ctx.fillStyle = g;
     const fh = Math.max(4, f * (h - 6));
     roundRect(ctx, x - w / 2 + 3, y + h - 3 - fh, w - 6, fh, 5);

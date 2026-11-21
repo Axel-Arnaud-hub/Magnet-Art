@@ -1,5 +1,6 @@
 import Layout from '../pages/Layout.jsx'
 import { DECOUVERTE, GRANDEURS } from './vendor/aimantarium.js'
+import { seenQty } from './sim.js'
 import './discover.css'
 
 function Mission({ chapter }) {
@@ -22,6 +23,8 @@ function Mission({ chapter }) {
 export default function Discover() {
   const base = DECOUVERTE.filter((c) => !c.optional)
   const more = DECOUVERTE.filter((c) => c.optional)
+  const keys = Object.keys(GRANDEURS)
+  const seen = seenQty()
   return (
     <Layout current="decouverte">
       <div className="d-hero">
@@ -29,7 +32,7 @@ export default function Discover() {
           <p className="d-label">Découverte</p>
           <h1>À toi de mener l’expérience.</h1>
           <p>Découvre les cinq réglages du bac à sable. Déplace les aimants, essaie les curseurs et regarde ce qui change.</p>
-          <a className="btn big" href={'#explore-' + base[0].id}>
+          <a className="btn primary big" href={'#explore-' + base[0].id}>
             Explorer le champ →
           </a>
         </div>
@@ -62,16 +65,29 @@ export default function Discover() {
         </>
       )}
 
+      {/* Carnet des notions (V19) : une grandeur se débloque quand on la
+          rencontre dans un atelier ou un quiz. */}
       <details className="d-notebook">
-        <summary>Carnet des notions</summary>
-        <div className="carnet-grid">
-          {Object.entries(GRANDEURS).map(([k, q]) => (
-            <div key={k} className="carnet-card">
-              <b>{q.sym}</b>
-              <strong>{q.name}</strong>
-              <p>{q.role}</p>
-            </div>
-          ))}
+        <summary>
+          Carnet des notions
+          <span className="d-notebook-count">
+            {keys.filter((k) => seen[k]).length} / {keys.length}
+          </span>
+        </summary>
+        <div className="carnet">
+          <p>Retrouve les notions vues dans les expériences et les quiz.</p>
+          <div className="carnet-grid">
+            {keys.map((k) => {
+              const q = GRANDEURS[k]
+              return (
+                <div key={k} className={'carnet-card' + (seen[k] ? ' on' : '')}>
+                  <b>{q.sym}</b>
+                  <strong>{q.name}</strong>
+                  <p>{seen[k] ? q.role : 'À découvrir dans un chapitre.'}</p>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </details>
     </Layout>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import Layout from '../pages/Layout.jsx'
 import Stage, { Legend } from './Stage.jsx'
 import { DECOUVERTE, GRANDEURS, REFS } from './vendor/aimantarium.js'
-import { applySet, createSim, makeHost, rememberQuestion, savedQuestion } from './sim.js'
+import { applySet, createSim, makeHost, markQty, rememberQuestion, savedQuestion } from './sim.js'
 import './discover.css'
 
 // Quiz facultatif d'un chapitre : une question à deux choix par étape, la
@@ -50,6 +50,12 @@ function QuizRun({ chapter }) {
     applySet(sim, step.setup, step.reset)
     if (step.prepare) step.prepare(sim)
   }, [sim, step])
+  // L'explication affichée (bonne réponse ou « voir l'explication ») débloque
+  // les grandeurs de la question dans le carnet des notions.
+  const explained = !!step && (st.answer === step.answer || st.revealed)
+  useEffect(() => {
+    if (explained) markQty(step.qty)
+  }, [explained, step])
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(''), 3400)

@@ -7,7 +7,7 @@
 //
 // Contraintes :
 //  - le serveur de phyphox parle HTTP (pas HTTPS). Un navigateur refuse
-//    qu'une page chargée en https l'interroge : il faut ouvrir Magnet'Art en
+//    qu'une page chargée en https l'interroge : il faut ouvrir Aimantarium en
 //    http (en local : npm run dev). phyphox envoie
 //    Access-Control-Allow-Origin: *, donc la requête est permise depuis
 //    une page http ;
@@ -59,7 +59,7 @@ export class PhyphoxSource {
   async connect() {
     this.alive = true
     if (window.location.protocol === 'https:') {
-      this.onStatus('Cette page est en https : le navigateur bloque l’accès à phyphox (http). Ouvre Magnet’Art en local (npm run dev).')
+      this.onStatus('Cette page est en https : le navigateur bloque l’accès à phyphox (http). Ouvre Aimantarium en local (npm run dev).')
       this.alive = false
       return
     }

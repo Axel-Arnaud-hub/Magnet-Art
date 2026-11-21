@@ -1,4 +1,4 @@
-// Banque de « Le savais-tu ? » de l'accueil. Trois sont tirés au hasard.
+// Banque de « Le savais-tu ? » de l'accueil, parcourue dans un ordre tiré au hasard.
 export const FACTS = [
   'Chaque électron se comporte comme un minuscule aimant : c’est son spin.',
   'Chauffé au-dessus de 770 °C, le fer n’est plus aimanté : c’est sa température de Curie.',
@@ -15,14 +15,12 @@ export const FACTS = [
   'Un skyrmion magnétique peut ne mesurer que quelques nanomètres : on étudie son usage pour stocker des données.',
 ]
 
-// Tire `n` faits différents, en évitant si possible ceux déjà affichés.
-export function pickFacts(n, avoid = []) {
-  const pool = FACTS.filter((f) => !avoid.includes(f))
-  const from = pool.length >= n ? pool : FACTS
-  const copy = [...from]
+// Tous les faits, dans un ordre aléatoire.
+export function shuffledFacts() {
+  const copy = [...FACTS]
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[copy[i], copy[j]] = [copy[j], copy[i]]
   }
-  return copy.slice(0, n)
+  return copy
 }

@@ -3,7 +3,7 @@ import Layout from '../pages/Layout.jsx'
 import { SpeakerWorkshop } from '../discover/vendor/aimantarium.js'
 import './applications.css'
 
-// Haut-parleur (Aimantarium V19). Magnet'Art ajoute sur le dessin ce que fait
+// Haut-parleur (Aimantarium V19). Aimantarium ajoute sur le dessin ce que fait
 // l'aimant : ses lignes de champ, guidées par les pièces en fer jusqu'à
 // l'entrefer où se trouve la bobine, et le sens du courant dans le fil.
 //

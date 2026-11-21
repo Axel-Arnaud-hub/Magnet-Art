@@ -2,11 +2,27 @@ import { useEffect, useState } from 'react'
 import Layout from '../pages/Layout.jsx'
 import Stage, { Legend } from './Stage.jsx'
 import { DECOUVERTE } from './vendor/aimantarium.js'
-import { applySet, createSim, makeHost, rememberSetting, savedSettings } from './sim.js'
+import { applySet, createSim, makeHost, markQty, rememberSetting, savedSettings } from './sim.js'
 import './discover.css'
 
 // Atelier libre d'un chapitre : la simulation, une mesure en direct et les
 // réglages commentés ; le quiz est proposé en option.
+
+// Valeur affichée, avec les flèches ↑ ↓ en plus gros (elles sont minuscules
+// dans la plupart des polices).
+function withArrows(text) {
+  return String(text)
+    .split(/([↑↓])/)
+    .map((part, i) =>
+      part === '↑' || part === '↓' ? (
+        <span key={i} className="d-arrow">
+          {part}
+        </span>
+      ) : (
+        part
+      ),
+    )
+}
 
 function Control({ control, value, onChange }) {
   const id = 'ctl-' + control.id
@@ -41,7 +57,7 @@ function Control({ control, value, onChange }) {
     <div className="d-control">
       <div className="d-control-head">
         <label htmlFor={id}>{control.label}</label>
-        <output htmlFor={id}>{shown}</output>
+        <output htmlFor={id}>{withArrows(shown)}</output>
       </div>
       <input
         id={id}
@@ -61,6 +77,8 @@ function Control({ control, value, onChange }) {
 function Workshop({ chapter }) {
   const free = chapter.free
   const [toast, setToast] = useState('')
+  // Téléphone : réglages dans un tiroir en bas de l'écran.
+  const [drawer, setDrawer] = useState(false)
   const [sim] = useState(() => {
     const s = createSim(free.mode || chapter.id, makeHost(setToast))
     const init = { ...free.setup, ...savedSettings(chapter.id) }
@@ -68,6 +86,8 @@ function Workshop({ chapter }) {
     applySet(s, init, free.reset)
     return s
   })
+  // Les grandeurs de l'atelier entrent dans le carnet des notions.
+  useEffect(() => markQty(free.qty), [free])
   // Rafraîchit la mesure (la simulation évolue sans React).
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -94,7 +114,7 @@ function Workshop({ chapter }) {
       </a>
       <h1 className="d-title">{chapter.short}</h1>
       {free.intro && <p className="d-intro">{free.intro}</p>}
-      <div className="d-lab">
+      <div className={'d-lab d-explore' + (drawer ? ' drawer-open' : '')}>
         <div className="d-main">
           <div className="d-stage">
             <Stage sim={sim} interactive={!!free.gesture} label={free.caption} />
@@ -112,29 +132,37 @@ function Workshop({ chapter }) {
           </a>
         </div>
         <section className="d-panel" aria-label="Réglages">
-          <h2>À toi de régler</h2>
-          <div className="d-controls">
-            {free.controls.map((control) => (
-              <Control key={control.id} control={control} value={sim.p[control.id]} onChange={(v) => change(control, v)} />
-            ))}
-          </div>
-          <div className="d-links">
-            {free.action && (
-              <button
-                className="btn"
-                onClick={() => {
-                  sim.action(free.action.id)
-                  setTick((n) => n + 1)
-                }}
-              >
-                {free.action.label}
-              </button>
-            )}
-            {free.mode === 'sandbox' && (
-              <a className="link" href="#xp-sandbox">
-                Ouvrir le bac à sable
-              </a>
-            )}
+          <button className="d-drawer-toggle" type="button" aria-expanded={drawer} aria-controls="d-drawer-body" onClick={() => setDrawer(!drawer)}>
+            <span>Réglages</span>
+            <span className="d-drawer-arrow" aria-hidden="true">
+              ⌃
+            </span>
+          </button>
+          <div className="d-drawer-body" id="d-drawer-body">
+            <h2>À toi de régler</h2>
+            <div className="d-controls">
+              {free.controls.map((control) => (
+                <Control key={control.id} control={control} value={sim.p[control.id]} onChange={(v) => change(control, v)} />
+              ))}
+            </div>
+            <div className="d-links">
+              {free.action && (
+                <button
+                  className="btn"
+                  onClick={() => {
+                    sim.action(free.action.id)
+                    setTick((n) => n + 1)
+                  }}
+                >
+                  {free.action.label}
+                </button>
+              )}
+              {free.mode === 'sandbox' && (
+                <a className="link" href="#xp-sandbox">
+                  Ouvrir le bac à sable
+                </a>
+              )}
+            </div>
           </div>
         </section>
       </div>

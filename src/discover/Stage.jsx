@@ -18,7 +18,9 @@ export default function Stage({ sim, interactive, label }) {
     const draw = () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
-      sim.draw(ctx, w, h)
+      // Dernier argument « guidé » : comme le prototype V19 dans la
+      // Découverte (libellés simplifiés de la paroi, thermomètre de Curie).
+      sim.draw(ctx, w, h, true)
     }
     // Redimensionner efface le canvas : on redessine aussitôt.
     const fit = () => {

@@ -27,14 +27,14 @@ function drawMagnet(ctx, p, r) {
 
 // Plein écran : boucle d'animation, intégration LLG et rendu.
 // Canvas du dessous : champ (WebGL2, ou 2D en secours). Canvas du dessus : flèches.
-export default function FieldCanvas({ sim, running, view, speed, tool, onStats, engine }) {
+export default function FieldCanvas({ sim, running, view, speed, tool, engine }) {
   const glRef = useRef(null)
   const overlayRef = useRef(null)
-  const live = useRef({ sim, running, view, speed, tool, onStats, engine })
+  const live = useRef({ sim, running, view, speed, tool, engine })
 
   useEffect(() => {
-    live.current = { sim, running, view, speed, tool, onStats, engine }
-  }, [sim, running, view, speed, tool, onStats, engine])
+    live.current = { sim, running, view, speed, tool, engine }
+  }, [sim, running, view, speed, tool, engine])
 
   useEffect(() => {
     const glCanvas = glRef.current
@@ -56,7 +56,6 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats, 
     let lay = null
     let raf = 0
     let last = performance.now()
-    let lastStats = 0
     let lastAudio = 0
     // Position du pointeur (px CSS) quand l'aimant est actif, sinon null.
     let pointer = null
@@ -76,7 +75,7 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats, 
     resize()
 
     const frame = (now) => {
-      const { sim, running, view, speed, tool, onStats } = live.current
+      const { sim, running, view, speed, tool } = live.current
       const dtReal = Math.min(0.05, (now - last) / 1000)
       last = now
       if (sim) {
@@ -101,10 +100,6 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats, 
           }
           if (view.arrows) drawArrows(octx, core, lay)
           if (magnet) drawMagnet(octx, pointer, (magnet.height * 1e-9 * lay.s) / core.dx)
-        }
-        if (now - lastStats > 200) {
-          lastStats = now
-          onStats(sim.computeStats())
         }
         const audio = live.current.engine.current
         if (audio && audio.running && now - lastAudio > 100) {

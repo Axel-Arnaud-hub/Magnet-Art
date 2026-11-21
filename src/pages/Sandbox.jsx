@@ -23,7 +23,6 @@ export default function Sandbox() {
   const [speed, setSpeed] = useState(1)
   // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
   const [tool, setTool] = useState({ kind: 'skyrmion', strength: 2500, height: 30, pole: 'N' })
-  const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
   // Son : le moteur est créé au premier clic (les navigateurs l'exigent).
   const engine = useRef(null)
   const [audio, setAudioState] = useState({ on: false, volume: 0.6, scale: 'auto' })
@@ -139,7 +138,12 @@ export default function Sandbox() {
 
   return (
     <>
-      <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} onStats={setStats} engine={engine} />
+      <a className="sb-close" href="#accueil" title="Quitter le bac à sable" aria-label="Quitter le bac à sable, retour à l’accueil">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </a>
+      <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} engine={engine} />
       <ControlPanel
         world={world}
         onWorld={chooseWorld}
@@ -152,7 +156,6 @@ export default function Sandbox() {
         setView={setView}
         speed={speed}
         setSpeed={setSpeed}
-        stats={stats}
         tool={tool}
         setTool={setTool}
         audio={audio}

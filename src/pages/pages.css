@@ -1,25 +1,31 @@
-/* Pages de contenu, au style d'Aimantarium V18 (css/style.css et
-   css/parcours.css du prototype) : polices système, titres très gras et
-   élargis, papier quadrillé, encre et rouge. Tout est confiné à .page pour
-   ne pas toucher au bac à sable (plein écran sombre). */
+/* Pages de contenu, au style d'Aimantarium (css/style.css et
+   css/parcours.css du prototype) : polices système, titres très gras,
+   papier de cahier à petits carreaux, encre et rouge. Tout est confiné à
+   .page pour ne pas toucher au bac à sable.
+
+   Espacements sur une échelle de 8 px : 8, 16, 24, 32, 48, 64… Le texte
+   courant reste sous ~70 caractères par ligne. */
 
 .page {
-  --paper: #f4efe6;
-  --paper2: #eae3d5;
-  --card: #fbf8f2;
+  --paper: #f6ecda;
+  --paper2: #ede2cc;
+  --card: #fffaf0;
   --ink: #17140f;
   --ink2: #4a443a;
   --ink3: #8a8275;
-  --rule: #d8cfbf;
+  --rule: #d9cbb2;
+  --gutter: clamp(20px, 3.5vw, 56px);
   --red: #d7301f;
   --blue: #1f4e9c;
   --gold: #c98a00;
   --leaf: #2f7d4f;
-  --lab-dark: #193437;
-  --lab-deep: #102426;
-  --lab-green: #c9e890;
-  --lab-light: #eef4eb;
-  --lab-muted: #bfd3c9;
+  /* Panneaux sombres (pistes du disque, haut-parleur) : encre chaude. */
+  --lab-dark: #2a241c;
+  --lab-deep: #17140f;
+  --lab-cell: #1d1914;
+  --lab-accent: #f2c14e;
+  --lab-light: #f1e6d2;
+  --lab-muted: #d4c6ae;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --f: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
   --fd: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
@@ -31,16 +37,12 @@
   font: 16px/1.55 var(--f);
   color: var(--ink);
   background-color: var(--paper);
+  /* Cahier de TP : petits carreaux réguliers, sans grand quadrillage. */
   background-image:
-    linear-gradient(rgba(23, 20, 15, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 20, 15, 0.055) 1px, transparent 1px),
-    linear-gradient(rgba(23, 20, 15, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 20, 15, 0.025) 1px, transparent 1px);
-  background-size:
-    120px 120px,
-    120px 120px,
-    24px 24px,
-    24px 24px;
+    linear-gradient(rgba(140, 104, 58, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(140, 104, 58, 0.15) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
   background-attachment: local;
 }
 
@@ -70,10 +72,11 @@
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 24px;
   flex-wrap: wrap;
-  padding: 10px 22px;
-  background: rgba(244, 239, 230, 0.94);
+  min-height: 76px;
+  padding: 14px var(--gutter);
+  background: rgba(246, 236, 218, 0.95);
   border-bottom: 2px solid var(--ink);
 }
 
@@ -90,27 +93,27 @@
 }
 
 .page .logo {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
 }
 
 .brand-t {
-  font: 850 1.4rem/1 var(--fd);
+  font: 850 1.65rem/1 var(--fd);
   font-stretch: 125%;
   letter-spacing: -0.02em;
 }
 
 .page .nav {
   display: flex;
-  gap: 4px;
-  margin-left: 8px;
+  gap: 6px;
+  margin-left: 16px;
 }
 
 .page .nav a {
   text-decoration: none;
-  padding: 8px 12px;
-  border-radius: 3px;
-  font: 700 0.95rem/1 var(--f);
+  padding: 11px 16px;
+  border-radius: 4px;
+  font: 700 1.02rem/1 var(--f);
   border: 2px solid transparent;
 }
 
@@ -125,14 +128,10 @@
 }
 
 .page-main {
-  max-width: 1100px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 0 22px 56px;
+  padding: 0 var(--gutter) 80px;
   animation: rise 0.35s ease both;
-}
-
-.page-main.wide {
-  max-width: 1440px;
 }
 
 @keyframes rise {
@@ -159,7 +158,7 @@
 .page h1 {
   font: 850 clamp(2.1rem, 5.6vw, 4.4rem) / 1.04 var(--fd);
   letter-spacing: -0.05em;
-  margin: 8px 0 14px;
+  margin: 12px 0 16px;
   max-width: 900px;
   text-wrap: balance;
 }
@@ -169,6 +168,53 @@
   color: var(--ink2);
   max-width: 700px;
   margin: 0;
+}
+
+/* ---- curseurs (rail encre, bouton rouge, comme le prototype) ---- */
+
+.page input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  margin: 2px 0 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.page input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--ink);
+  border-radius: 2px;
+}
+
+.page input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2.5px solid var(--ink);
+  box-shadow: inset 0 0 0 3px var(--card);
+}
+
+.page input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--ink);
+  border-radius: 2px;
+}
+
+.page input[type='range']::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2.5px solid var(--ink);
+}
+
+.page input[type='checkbox'] {
+  accent-color: var(--red);
 }
 
 /* ---- boutons ---- */
@@ -237,21 +283,21 @@
 /* ---- accueil ---- */
 
 .welcome-head {
-  padding: 40px 0 22px;
+  padding: 48px 0 32px;
 }
 
 .doors {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 14px;
-  margin: 28px 0 18px;
+  gap: 24px;
+  margin: 48px 0 0;
 }
 
 .page .door {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 18px 18px 16px;
+  gap: 8px;
+  padding: 24px;
   background: var(--card);
   border: 1.5px solid var(--ink);
   border-radius: 12px;
@@ -305,13 +351,21 @@
   position: relative;
 }
 
+/* Ombre seulement au survol, comme les cartes en dessous. */
 .hero-canvas {
-  height: clamp(300px, 46vh, 500px);
+  height: clamp(360px, 54vh, 600px);
   background: var(--card);
   border: 2px solid var(--ink);
   border-radius: 6px;
-  box-shadow: 7px 7px 0 var(--ink);
   overflow: hidden;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.hero-canvas:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 5px 0 var(--ink);
 }
 
 /* pan-y : sur téléphone, on peut encore faire défiler la page. */
@@ -328,85 +382,83 @@
 }
 
 .fig-cap {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   font-size: 0.84rem;
   color: var(--ink2);
 }
 
-/* ---- le savais-tu ? ---- */
+/* ---- le savais-tu ? (bonus, détaché du reste) ---- */
 
-.facts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+.did {
+  max-width: 760px;
+  margin: 160px auto 0;
+  text-align: center;
+}
+
+.did-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--red);
+  font: 850 2.6rem/1 var(--fd);
+}
+
+.page .did h2 {
+  margin: 16px 0 24px;
+  font: 850 clamp(1.4rem, 2.6vw, 1.9rem) / 1.1 var(--fd);
+  letter-spacing: 0.06em;
+}
+
+.did-fact {
+  min-height: 4.8em;
   margin: 0;
-}
-
-.fact {
-  background: var(--paper2);
-  border-radius: 10px;
-  padding: 12px 14px;
-}
-
-.fact b {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--red);
-}
-
-.fact p {
-  margin: 4px 0 0;
-  font-size: 0.94rem;
-  line-height: 1.45;
-}
-
-.page .facts-more {
-  margin-bottom: 18px;
-}
-
-/* ---- carnet des notions ---- */
-
-.carnet-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 10px;
-}
-
-.carnet-card {
-  border: 1.5px solid var(--ink);
-  border-radius: 9px;
-  padding: 10px 12px;
-  background: #fffefb;
-}
-
-.carnet-card b {
-  display: block;
-  font: 850 1.5rem/1 var(--fd);
-  color: var(--red);
-  margin-bottom: 4px;
-}
-
-.carnet-card strong {
-  display: block;
-  font-size: 0.9rem;
-}
-
-.carnet-card p {
-  margin: 4px 0 0;
-  font-size: 0.82rem;
-  line-height: 1.4;
+  font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+  line-height: 1.6;
   color: var(--ink2);
+  text-wrap: pretty;
+}
+
+.did-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.did-count {
+  min-width: 4.5em;
+  font: 700 0.9rem var(--mono);
+  color: var(--ink3);
+}
+
+.page .did-nav .btn {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.1rem;
 }
 
 @media (max-width: 760px) {
   .page-top {
     gap: 8px 12px;
-    padding: 8px 14px;
+    padding: 8px 16px;
   }
 
   .brand-t {
     font-size: 1.15rem;
+  }
+
+  .page-top {
+    min-height: 0;
+  }
+
+  .page .logo {
+    width: 36px;
+    height: 36px;
   }
 
   .page .nav {
@@ -425,15 +477,24 @@
     white-space: nowrap;
   }
 
-  .page-main {
-    padding: 0 14px 40px;
+  .page {
+    --gutter: 16px;
+  }
+
+  .welcome-head {
+    padding: 32px 0 24px;
   }
 
   .hero-canvas {
-    height: 340px;
+    height: 360px;
   }
 
-  .facts {
-    grid-template-columns: 1fr;
+  .doors {
+    gap: 16px;
+    margin-top: 32px;
+  }
+
+  .did {
+    margin-top: 96px;
   }
 }

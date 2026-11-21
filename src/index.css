@@ -4,13 +4,22 @@
   box-sizing: border-box;
 }
 
+/* Base commune : 16 px, pour que les rem des pages de contenu valent ce
+   qu'ils valent dans le prototype Aimantarium. Le bac à sable fixe sa propre
+   taille de texte sur son panneau. */
 :root {
-  color-scheme: dark;
-  --fg: #d8d8d8;
-  --dim: #6a6a6a;
-  --line: #222;
-  font: 12px/1.4 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  color: var(--fg);
+  color-scheme: light;
+  --paper: #f6ecda;
+  --card: #fffaf0;
+  --ink: #17140f;
+  --ink2: #4a443a;
+  --ink3: #7d7465;
+  --rule: #d9cbb2;
+  --red: #d7301f;
+  --gold: #c98a00;
+  --f: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  font: 16px/1.5 var(--f);
+  color: var(--ink);
   background: #000;
   -webkit-font-smoothing: antialiased;
 }
@@ -25,6 +34,8 @@ body,
   background: #000;
 }
 
+/* ---- bac à sable : la simulation plein écran ---- */
+
 .field {
   position: fixed;
   inset: 0;
@@ -35,28 +46,75 @@ body,
   touch-action: none;
 }
 
-/* ---- panneau ---- */
+.overlay {
+  background: transparent;
+}
+
+/* Croix rouge : quitter le bac à sable. */
+.sb-close {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--red);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
+}
+
+.sb-close svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.sb-close:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.sb-close:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* ---- panneau de réglages ---- */
 
 .panel {
   position: fixed;
-  top: 12px;
-  right: 12px;
-  width: 260px;
-  max-height: calc(100% - 24px);
+  top: 68px;
+  right: 14px;
+  width: 272px;
+  max-height: calc(100% - 82px);
   overflow-y: auto;
   overflow-x: hidden;
-  background: rgba(0, 0, 0, 0.82);
-  border: 1px solid var(--line);
-  backdrop-filter: blur(6px);
+  font: 13px/1.4 var(--f);
+  color: var(--ink);
+  background: rgba(255, 250, 240, 0.7);
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: var(--rule) transparent;
 }
 
 .panel.closed {
   width: auto;
 }
 
-.hide-ui .panel {
+.hide-ui .panel,
+.hide-ui .sb-close {
   display: none;
 }
 
@@ -64,42 +122,45 @@ body,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 
-.stats {
+.panel-title {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--dim);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.panel.closed .panel-title {
+  flex: none;
 }
 
 .body {
-  padding: 0 10px 10px;
+  padding: 0 14px 14px;
 }
 
-fieldset {
+.panel fieldset {
   border: 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(23, 20, 15, 0.18);
   margin: 0;
-  padding: 8px 0 6px;
+  padding: 10px 0 8px;
 }
 
-legend {
-  color: var(--dim);
-  padding: 0 6px 0 0;
-  text-transform: lowercase;
+.panel legend {
+  padding: 0 8px 0 0;
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .row {
   display: grid;
-  grid-template-columns: 52px 1fr 44px;
+  grid-template-columns: 56px 1fr 44px;
   align-items: center;
-  gap: 6px;
-  margin: 3px 0;
+  gap: 8px;
+  margin: 4px 0;
 }
 
 .row.check {
@@ -108,147 +169,160 @@ legend {
 }
 
 .lbl {
-  color: var(--fg);
+  font-weight: 650;
 }
 
 .unit {
-  color: var(--dim);
-  font-size: 11px;
+  color: var(--ink2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-input,
-select,
-button {
+.panel input,
+.panel select,
+.panel button {
   font: inherit;
-  color: var(--fg);
-  background: #000;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  padding: 3px 5px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  padding: 4px 7px;
   outline: none;
 }
 
-input:focus,
-select:focus,
-button:focus-visible {
-  border-color: #555;
+.panel input:focus-visible,
+.panel select:focus-visible,
+.panel button:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
 }
 
-input[type='number'] {
-  width: 100%;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  -moz-appearance: textfield;
-  appearance: textfield;
+.panel input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--red);
 }
 
-input::-webkit-inner-spin-button,
-input::-webkit-outer-spin-button {
+/* Curseurs au style du prototype : rail encre, bouton rouge. */
+.panel input[type='range'] {
   -webkit-appearance: none;
-  margin: 0;
-}
-
-input[type='checkbox'] {
-  accent-color: #fff;
-  margin: 0;
-}
-
-input[type='range'] {
-  accent-color: #fff;
+  appearance: none;
+  width: 100%;
+  height: 22px;
   padding: 0;
   border: 0;
-}
-
-fieldset > select {
-  width: 100%;
-}
-
-button {
+  background: transparent;
   cursor: pointer;
 }
 
-button:hover {
-  border-color: #555;
+.panel input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--ink);
+  border-radius: 2px;
 }
 
-button.ghost {
+.panel input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--ink);
+}
+
+.panel input[type='range']::-moz-range-track {
+  height: 3px;
+  background: var(--ink);
+  border-radius: 2px;
+}
+
+.panel input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--ink);
+}
+
+.panel select {
+  width: 100%;
+}
+
+.panel button {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.panel button:hover {
+  background: #fff;
+}
+
+.panel button.ghost {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 6px;
   border: 0;
-  padding: 0 4px;
-  color: var(--dim);
-  font-size: 14px;
+  background: transparent;
+  color: var(--ink2);
+  font-size: 16px;
+}
+
+.panel button.ghost:hover {
+  color: var(--ink);
+  background: rgba(23, 20, 15, 0.08);
+}
+
+.panel button.play {
+  font-size: 12px;
 }
 
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .actions button {
-  padding: 6px;
+  padding: 8px;
 }
 
-button.primary {
-  background: #fff;
-  color: #000;
-  border-color: #fff;
+.panel button.primary {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.panel button.primary:hover {
+  background: #e4402f;
 }
 
 .swatch {
-  height: 4px;
-  margin: 2px 0 6px 58px;
-}
-
-.overlay {
-  background: transparent;
+  height: 5px;
+  margin: 2px 0 6px 64px;
+  border-radius: 3px;
 }
 
 .hint {
   margin: 8px 0 0;
-  color: var(--dim);
-  font-size: 11px;
-}
-
-button.play {
-  font-size: 11px;
-}
-
-a.home {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  background: #d7301f;
-  border-radius: 4px;
-}
-
-a.home svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: #fff;
-  stroke-width: 2.2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-a.home:hover {
-  background: #ef4a37;
+  color: var(--ink2);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* ---- curseurs, choix, joystick ---- */
 
 .slider {
   display: block;
-  margin: 4px 0 6px;
+  margin: 6px 0 4px;
 }
 
 .slider-head {
   display: flex;
   justify-content: space-between;
-  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 .slider input[type='range'],
@@ -259,17 +333,23 @@ a.home:hover {
 
 .segmented {
   display: flex;
-  margin: 4px 0 6px;
+  margin: 6px 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.segmented button {
+.panel .segmented button {
   flex: 1;
-  padding: 5px 4px;
-  color: var(--dim);
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink2);
 }
 
-.segmented button + button {
-  border-left: 0;
+.panel .segmented button + button {
+  border-left: 1.5px solid var(--ink);
 }
 
 .segmented.grid {
@@ -277,21 +357,24 @@ a.home:hover {
   grid-template-columns: 1fr 1fr;
 }
 
-.segmented.grid button + button {
-  border-left: 1px solid var(--line);
+.panel .segmented.grid button:nth-child(odd) {
+  border-left: 0;
 }
 
-.segmented button.on {
-  background: #fff;
-  color: #000;
-  border-color: #fff;
+.panel .segmented.grid button:nth-child(n + 3) {
+  border-top: 1.5px solid var(--ink);
+}
+
+.panel .segmented button.on {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .joy-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 8px 0 4px;
+  gap: 14px;
+  margin: 10px 0 6px;
 }
 
 .joystick {
@@ -314,27 +397,30 @@ a.home:hover {
 }
 
 .joy-ring {
-  fill: none;
-  stroke: #333;
-  stroke-width: 1;
+  fill: rgba(255, 250, 240, 0.6);
+  stroke: var(--ink);
+  stroke-width: 1.2;
 }
 
 .joy-ring.inner {
-  stroke: #1c1c1c;
+  fill: none;
+  stroke: var(--rule);
 }
 
 .joy-axis {
-  stroke: #1c1c1c;
+  stroke: var(--rule);
   stroke-width: 1;
 }
 
 .joy-vec {
-  stroke: #fff;
-  stroke-width: 1.5;
+  stroke: var(--red);
+  stroke-width: 2;
 }
 
 .joy-knob {
-  fill: #fff;
+  fill: var(--red);
+  stroke: var(--ink);
+  stroke-width: 1.5;
 }
 
 .joy-info {
@@ -349,8 +435,8 @@ a.home:hover {
   align-self: flex-start;
 }
 
-button:disabled {
-  opacity: 0.35;
+.panel button:disabled {
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -358,7 +444,7 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 4px 0 6px;
+  margin: 6px 0;
 }
 
 .phy-row input {
@@ -371,19 +457,23 @@ button:disabled {
   margin: 4px 0 6px;
 }
 
-button.link {
+.panel button.link {
   border: 0;
-  padding: 4px 0 0;
-  color: var(--dim);
+  padding: 6px 0 0;
+  background: transparent;
+  color: var(--ink2);
+  font-weight: 600;
   text-decoration: underline;
-  font-size: 11px;
+  text-underline-offset: 3px;
+  font-size: 12px;
 }
 
 /* ---- téléphone : panneau en bas, plein largeur ---- */
 
 @media (max-width: 640px) {
-  :root {
-    font-size: 14px;
+  .sb-close {
+    top: 10px;
+    left: 10px;
   }
 
   .panel {
@@ -393,7 +483,9 @@ button.link {
     bottom: 0;
     width: 100%;
     max-height: 62dvh;
-    border-width: 1px 0 0;
+    font-size: 14px;
+    border-width: 1.5px 0 0;
+    border-radius: 14px 14px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -404,33 +496,23 @@ button.link {
   .panel header {
     position: sticky;
     top: 0;
-    background: #000;
-    padding: 10px 12px;
     z-index: 1;
+    padding: 8px 12px;
+    background: rgba(255, 250, 240, 0.92);
   }
 
-  a.home {
-    width: 36px;
-    height: 36px;
-  }
-
-  a.home svg {
-    width: 21px;
-    height: 21px;
-  }
-
-  button.ghost {
+  .panel button.ghost {
     font-size: 20px;
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
-  button.play {
+  .panel button.play {
     font-size: 14px;
   }
 
   .body {
-    padding: 0 14px 14px;
+    padding: 0 16px 16px;
   }
 
   .row {
@@ -440,14 +522,14 @@ button.link {
   }
 
   /* 16px minimum : évite le zoom automatique d'iOS au focus */
-  input,
-  select,
-  button {
+  .panel input,
+  .panel select,
+  .panel button {
     font-size: 16px;
     padding: 7px 8px;
   }
 
-  input[type='checkbox'] {
+  .panel input[type='checkbox'] {
     width: 20px;
     height: 20px;
   }

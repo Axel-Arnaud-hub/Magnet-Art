@@ -1,13 +1,15 @@
 import { Suspense, lazy, useState } from 'react'
 import Layout from './Layout.jsx'
-import { pickFacts } from './facts.js'
+import { shuffledFacts } from './facts.js'
 
 // L'aimant à manipuler (et le code de simulation du prototype) est chargé à
 // part : le texte de l'accueil s'affiche tout de suite.
 const HeroMagnet = lazy(() => import('./HeroMagnet.jsx'))
 
 export default function Home() {
-  const [facts, setFacts] = useState(() => pickFacts(3))
+  const [facts] = useState(shuffledFacts)
+  const [k, setK] = useState(0)
+  const step = (d) => setK((i) => (i + d + facts.length) % facts.length)
 
   return (
     <Layout current="accueil">
@@ -51,17 +53,26 @@ export default function Home() {
         </a>
       </div>
 
-      <section className="facts" aria-label="Le savais-tu ?">
-        {facts.map((f) => (
-          <div key={f} className="fact">
-            <b>Le savais-tu ?</b>
-            <p>{f}</p>
-          </div>
-        ))}
+      <section className="did" aria-labelledby="did-title">
+        <span className="did-mark" aria-hidden="true">
+          ?
+        </span>
+        <h2 id="did-title">LE SAVAIS-TU ?</h2>
+        <p className="did-fact" aria-live="polite">
+          {facts[k]}
+        </p>
+        <div className="did-nav">
+          <button className="btn" onClick={() => step(-1)} aria-label="Fait précédent">
+            ←
+          </button>
+          <span className="did-count">
+            {k + 1} / {facts.length}
+          </span>
+          <button className="btn" onClick={() => step(1)} aria-label="Fait suivant">
+            →
+          </button>
+        </div>
       </section>
-      <button className="link facts-more" onClick={() => setFacts((cur) => pickFacts(3, cur))}>
-        D’autres faits →
-      </button>
     </Layout>
   )
 }

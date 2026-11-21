@@ -33,3 +33,26 @@ export const savedQuestion = (chapterId) => quizProgress[chapterId] || 0
 export function rememberQuestion(chapterId, index) {
   quizProgress[chapterId] = index
 }
+
+// Carnet des notions (comme le prototype V19) : les grandeurs rencontrées
+// dans les ateliers et les quiz, gardées d'une visite à l'autre.
+const QTY_KEY = 'aim-grandeurs'
+
+export function seenQty() {
+  try {
+    return JSON.parse(localStorage.getItem(QTY_KEY)) || {}
+  } catch {
+    return {}
+  }
+}
+
+export function markQty(keys) {
+  if (!keys || !keys.length) return
+  const seen = seenQty()
+  keys.forEach((k) => (seen[k] = true))
+  try {
+    localStorage.setItem(QTY_KEY, JSON.stringify(seen))
+  } catch {
+    // stockage indisponible (navigation privée) : le carnet reste en mémoire de page
+  }
+}
