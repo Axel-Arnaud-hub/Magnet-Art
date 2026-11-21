@@ -164,10 +164,6 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
               <input type="checkbox" checked={view.arrows} onChange={(e) => setView({ ...view, arrows: e.target.checked })} />
               <span>Flèches</span>
             </label>
-            <label className="row check">
-              <input type="checkbox" checked={view.lines} onChange={(e) => setView({ ...view, lines: e.target.checked })} />
-              <span>Lignes de champ</span>
-            </label>
             <label className="row">
               <span className="lbl">Vitesse</span>
               <input type="range" min="0.1" max="4" step="0.1" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
