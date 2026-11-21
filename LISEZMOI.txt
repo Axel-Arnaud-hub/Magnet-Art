@@ -1,0 +1,46 @@
+MicroMag Lab — version Sandbox + Pinning
+=====================================
+
+Démarrage sur ordinateur :
+  1. Extraire l’archive.
+  2. Ouvrir micromag-lab/index.html dans un navigateur récent.
+  3. Si la lecture en file:// est limitée, dans le répertoire micromag-lab :
+     python3 -m http.server 8000
+     puis http://localhost:8000
+
+Sur téléphone :
+  - Héberger le site avec HTTPS (localhost ne fonctionne que sur le même appareil).
+  - Utiliser le bouton « Activer les capteurs » puis accepter la demande si nécessaire.
+  - Les inclinaisons pilotent un CHAMP VIRTUEL dans le Sandbox ; ce n’est pas
+    une mesure du champ magnétique, ni un usage du magnétomètre.
+  - L’accès aux capteurs dépend du navigateur/appareil, à tester sur matériel réel.
+
+Organisation :
+  js/engine/film_llg.js  moteur LLG commun 1D/2D (échange, DMI, anisotropie,
+                         champs, STT, option de champ démagnétisant approché).
+                         Option Kmap pour anisotropie par cellule (pinning).
+  js/engine/macro_llg.js  intégrateur du macrospin
+  js/engine/fft.js        FFT auxiliaire
+  js/sim_base.js         classes de base / liens solveur-simulations
+  js/sandbox.js          mode libre, préréglages, outils de dessin
+  js/sims_film.js        parois libre et piégée, vortex, skyrmions, ondes
+  js/sims_macro.js       simulations macrospin
+  js/sensors.js          activation opt-in des capteurs du téléphone
+  js/models.js          modes, paramètres, descriptions, défis
+  js/viz.js             graphiques et rendu
+  js/app.js             interface générale
+  css/style.css         styles responsive
+  SOURCES.md            références scientifiques et justification des approximations
+  TESTS.md              contrôles effectués et limites
+
+Paroi piégée :
+  - choisir « Paroi — Pinning » dans Pack Textures ;
+  - observer à 12 mT ; comparer avec « Aucun défaut » ;
+  - augmenter à 110 mT avec « Dépiéger (champ fort) » ;
+  - réinitialiser la paroi entre deux scénarios reproductibles.
+  - La valeur de champ de dépiégeage affichée est une ESTIMATION obtenue
+    avec une paroi rigide quasi-statique, non une mesure précise.
+
+Attention : modèle pédagogique 1D / 2D sans thermostat, sans validation
+quantitative ni erreur contrôlée. Ne pas utiliser pour publier des courbes
+sans vérification de convergence et comparaison à OOMMF ou MuMax3.
