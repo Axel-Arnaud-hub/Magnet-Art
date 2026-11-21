@@ -63,6 +63,8 @@ export function featureVector(f) {
     0.5 * f.mz,
     Math.min(Math.abs(f.Q), 4) / 2,
     f.inPlane,
+    f.planar ?? 0,
+    2 * Math.min(f.texture ?? 0, 0.4),
     m ? 0.5 + 0.5 * m.strength : 0,
   ]
 }

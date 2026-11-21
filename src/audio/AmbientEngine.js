@@ -1,27 +1,31 @@
 // Nappe de synthétiseur ambient pilotée par l'état du film magnétique.
 // Web Audio pur, sans dépendance.
 //
+// LE SON EST UN POINT SUR UNE CARTE. Trois archétypes sonores (le trou du
+// skyrmion, le dédale du labyrinthe, le tourbillon du vortex) jouent en
+// permanence, chacun dans sa couche de voix, dans une tonalité commune. La
+// position du film sur la carte (soundMap.js : aimantation couchée ou non,
+// texture) donne le poids de chaque couche. Tous les réglages continus
+// (filtre, souffle, écho, réverb, rotation…) sont des mélanges pondérés.
+// Peu importe comment on arrive à un état (bouton de monde ou curseurs) :
+// seul ce que fait le film compte.
+//
 // Deux échelles de temps :
-//  - en continu (~10 fois par seconde), le TIMBRE suit le film : volume, filtre,
-//    désaccord, souffle, écho, panoramique. Tout est lissé sur ~1 s.
+//  - en continu (~10 fois par seconde), le TIMBRE suit le film, lissé sur ~1 s ;
 //  - l'HARMONIE (accord, mode, nombre de notes, tonalité) ne change que sur un
-//    PIC DE CHANGEMENT de l'état du film (voir peaks.js) : un geste franc
-//    (aimant posé, champ modifié, skyrmion créé…) fait tourner la musique,
-//    l'agitation de fond non. Plus le pic est fort, plus le saut est grand.
+//    PIC DE CHANGEMENT de l'état du film (peaks.js). Plus le pic est fort,
+//    plus le saut est grand. Le mode et la progression viennent alors de
+//    l'archétype dominant.
 //
-// Chaque monde a son PROFIL : instrument, registre, tonalité, type d'accords,
-// modes, textures. Le son évoque la nature du champ : le skyrmion est un trou
-// (grave, sourd), le vortex tourne (les voix circulent dans l'espace stéréo,
-// décalées en phase), le labyrinthe est dense et granuleux.
-//
-// Entrées (update) : world, activity ∈ [0,1], walls ∈ [0,1], mz ∈ [-1,1],
-// inPlane ∈ [0,1], circulation, Q, magnet { x, strength ∈ [0,1], pole } ou null.
+// Entrées (update) : activity, mz, inPlane, planar, texture,
+// circulation, Q, magnet { x, strength ∈ [0,1], pole } ou null.
 
 import { PeakDetector, featureVector } from './peaks.js'
+import { ARCHETYPES, soundMap } from './soundMap.js'
 
 // Modes (intervalles en demi-tons depuis la tonique).
 export const SCALES = {
-  auto: { label: 'Auto (selon le monde)' },
+  auto: { label: 'Auto (selon le film)' },
   penta: { label: 'Pentatonique', steps: [0, 2, 4, 7, 9] },
   lydian: { label: 'Lydien', steps: [0, 2, 4, 6, 7, 9, 11] },
   ionian: { label: 'Majeur', steps: [0, 2, 4, 5, 7, 9, 11] },
@@ -31,28 +35,27 @@ export const SCALES = {
   phrygian: { label: 'Phrygien', steps: [0, 1, 3, 5, 7, 8, 10] },
 }
 
-// Profils sonores par monde.
-//  voice : oscillateurs de chaque voix (forme, rapport de fréquence, sens du
-//          désaccord, niveau) ; chord : degrés de l'accord dans la gamme ;
-//  progression : degrés de départ des accords successifs ;
-//  mode(f) : gamme en mode « auto » ; bell : cloche quand Q change (null = sans).
+// Caractère sonore de chaque archétype.
+//  octave : transposition de la couche ; voice : oscillateurs de chaque voix
+//  (forme, rapport de fréquence, sens du désaccord, niveau) ; chord : degrés
+//  de l'accord ; progression : suite d'accords ; mode(f) : gamme en « auto » ;
+//  rotation : circulation des voix dans l'espace ; bell : cloche quand Q change.
 export const PROFILES = {
-  // Le trou : un skyrmion est un creux dans l'aimantation. Son grave et sourd
-  // (sinus, octave basse, filtre fermé, sous-basse permanente) ; il ne
-  // s'éclaircit que quand le film s'agite. Les skyrmions qui naissent ou
-  // meurent font des « gouttes » étouffées.
+  // Le trou : un skyrmion est un creux dans l'aimantation. Grave et sourd
+  // (sinus, octave basse, filtre fermé, sous-basse permanente). Les skyrmions
+  // qui naissent ou meurent font des « gouttes » étouffées.
   skyrmion: {
-    root: 45, // la grave
+    octave: -1,
     voice: [
       { type: 'sine', ratio: 1, cents: 0, level: 0.5 },
-      { type: 'triangle', ratio: 0.5, cents: -1, level: 0.38 },
+      { type: 'triangle', ratio: 1, cents: -1, level: 0.3 },
       { type: 'sine', ratio: 2, cents: 1, level: 0.06 },
     ],
     chord: [0, 2, 4, 6, 8],
     progression: [0, 3, 5, 4, 1, 2],
     mode: (f) => (f.mz > 0.5 ? 'dorian' : f.mz > -0.5 ? 'aeolian' : 'phrygian'),
     detune: [2, 8],
-    filter: { base: 260, act: 1800, walls: 500, q: 0.7 },
+    filter: { base: 260, act: 1800, motifs: 500, q: 0.7 },
     lfo: { rate: 0.04, depth: 60 },
     rotation: { rate: 0.04, pan: 0.2, amp: 0.05, pitch: 0 },
     noise: { level: 0, freq: 3000, q: 1 },
@@ -61,10 +64,10 @@ export const PROFILES = {
     sub: 0.14,
     bell: { stable: 1, gap: 6, ratio: 2, decay: 3, octave: 1, muffled: true },
   },
-  // Dédale : dents de scie et carré grave, modes sombres, filtre résonant qui
-  // pulse, souffle granuleux qui suit les parois, échos denses.
+  // Le dédale : dents de scie et carré grave, modes sombres, filtre résonant
+  // qui pulse, souffle granuleux qui suit les parois, échos denses.
   labyrinth: {
-    root: 50, // ré
+    octave: 0,
     voice: [
       { type: 'sawtooth', ratio: 1, cents: -1, level: 0.3 },
       { type: 'sawtooth', ratio: 1, cents: 1, level: 0.3 },
@@ -74,7 +77,7 @@ export const PROFILES = {
     progression: [0, 5, 3, 6, 4, 2],
     mode: (f) => (f.mz > 0.3 ? 'dorian' : f.mz > -0.3 ? 'aeolian' : 'phrygian'),
     detune: [8, 30],
-    filter: { base: 200, act: 2200, walls: 1200, q: 4 },
+    filter: { base: 200, act: 2200, motifs: 1200, q: 4 },
     lfo: { rate: 0.22, depth: 350 },
     rotation: { rate: 0.1, pan: 0.25, amp: 0.1, pitch: 0 },
     noise: { level: 0.06, freq: 700, q: 0.8 },
@@ -83,13 +86,13 @@ export const PROFILES = {
     sub: 0,
     bell: { stable: 2.5, gap: 15, ratio: 1.41, decay: 6, octave: 0 },
   },
-  // Tourbillon : orgue doux (quinte ajoutée), accords en quartes. Les voix
+  // Le tourbillon : orgue doux (quinte ajoutée), accords en quartes. Les voix
   // tournent autour de l'auditeur, chacune décalée en phase (panoramique,
   // volume et légère hauteur, comme une cabine Leslie), dans le sens de
-  // l'enroulement du vortex ; plus vite quand le film s'agite ou que le cœur
-  // se décale.
+  // l'enroulement de l'aimantation ; plus vite quand le film s'agite. Sans
+  // enroulement (aimantation couchée uniforme), la rotation s'efface.
   vortex: {
-    root: 53, // fa
+    octave: 0,
     voice: [
       { type: 'triangle', ratio: 1, cents: 0, level: 0.4 },
       { type: 'sine', ratio: 1.5, cents: 1, level: 0.18 },
@@ -99,7 +102,7 @@ export const PROFILES = {
     progression: [0, 4, 1, 5, 3],
     mode: (f) => (f.inPlane > 0.25 ? 'lydian' : 'mixolydian'),
     detune: [3, 8],
-    filter: { base: 600, act: 2500, walls: 300, q: 2 },
+    filter: { base: 600, act: 2500, motifs: 300, q: 2 },
     lfo: { rate: 0.08, depth: 150 },
     rotation: { rate: 0.15, pan: 0.9, amp: 0.35, pitch: 6 },
     noise: { level: 0.025, freq: 2500, q: 2 },
@@ -110,11 +113,13 @@ export const PROFILES = {
   },
 }
 
+const ROOT = 50 // ré, tonique commune à toutes les couches
 const VOICES = 5
-const WARMUP = 3 // s sans pic après un changement de monde
+const WARMUP = 3 // s sans pic ni cloche au démarrage
 const FALLBACK = 45 // s : sans aucun pic, l'accord avance quand même
 const Q_HYST = 0.75 // écart de Q (stable) qui fait sonner la cloche
 const MOD_GAP = 30 // s minimum entre deux modulations
+const DOM_HOLD = 2 // s : un nouvel archétype dominant qui tient fait tourner l'harmonie
 // Dispositions des voix (octaves ajoutées), variées sur les pics moyens.
 const VOICINGS = [
   [0, 0, 0, 0, 0],
@@ -129,6 +134,22 @@ function noteOf(root, steps, degree, octave = 0) {
   const n = steps.length
   const o = Math.floor(degree / n)
   return root + steps[((degree % n) + n) % n] + 12 * (o + octave)
+}
+
+// Moyennes pondérées des réglages des archétypes (géométrique pour les
+// fréquences, qui se perçoivent en rapport).
+function mix(w, get) {
+  let s = 0
+  for (const id of ARCHETYPES) s += w[id] * get(PROFILES[id])
+  return s
+}
+function mixFreq(w, get) {
+  let s = 0
+  for (const id of ARCHETYPES) s += w[id] * Math.log(get(PROFILES[id]))
+  return Math.exp(s)
+}
+function dominant(w) {
+  return ARCHETYPES.reduce((a, b) => (w[b] > w[a] ? b : a))
 }
 
 // Sinusoïde déphasée de φ, pour des LFO synchrones décalés entre les voix.
@@ -181,18 +202,17 @@ export class AmbientEngine {
     this.delay.connect(this.reverb)
     this.delay.connect(this.master)
 
-    // Nappe : voix -> filtre résonant -> panoramique -> bus (fondu entre
-    // mondes) -> volume -> direct / délai / réverb.
+    // Nappe : couches -> filtre résonant commun -> panoramique (aimant) ->
+    // volume -> direct / délai / réverb.
     this.filter = ctx.createBiquadFilter()
     this.filter.type = 'lowpass'
     this.filter.frequency.value = 400
     this.pan = ctx.createStereoPanner()
-    this.bus = ctx.createGain()
     this.padGain = ctx.createGain()
     this.padGain.gain.value = 0.3
     const dry = ctx.createGain()
     dry.gain.value = 0.35
-    this.filter.connect(this.pan).connect(this.bus).connect(this.padGain)
+    this.filter.connect(this.pan).connect(this.padGain)
     this.padGain.connect(dry).connect(this.master)
     this.padGain.connect(this.reverb)
     this.padGain.connect(this.delaySend)
@@ -217,42 +237,52 @@ export class AmbientEngine {
     noise.connect(this.noiseBand).connect(this.noiseGain).connect(this.pan)
     noise.start()
 
-    // Voix : 3 oscillateurs (formes définies par le profil) -> niveau de la
-    // note -> trémolo -> panoramique propre -> filtre.
+    // Une couche de 5 voix par archétype. Voix : 3 oscillateurs -> niveau de
+    // la note -> trémolo -> panoramique propre -> volume de la couche.
     // Rotation : chaque voix a deux LFO de même fréquence, déphasés de
     // 2π·v/5 d'une voix à l'autre. Le premier la promène gauche/droite, le
     // second (en quadrature) module son volume (devant/derrière) et sa hauteur
-    // (effet Doppler). Toutes les voix circulent ainsi l'une après l'autre.
-    this.voices = []
-    this.rotDir = 1
-    for (let v = 0; v < VOICES; v++) {
-      const g = ctx.createGain()
-      g.gain.value = 0
-      const trem = ctx.createGain()
-      const vp = ctx.createStereoPanner()
-      g.connect(trem).connect(vp).connect(this.filter)
-      const lfoPan = ctx.createOscillator()
-      const lfoQuad = ctx.createOscillator()
-      const panAmt = ctx.createGain()
-      const ampAmt = ctx.createGain()
-      const pitchAmt = ctx.createGain()
-      panAmt.gain.value = 0
-      ampAmt.gain.value = 0
-      pitchAmt.gain.value = 0
-      lfoPan.connect(panAmt).connect(vp.pan)
-      lfoQuad.connect(ampAmt).connect(trem.gain)
-      lfoQuad.connect(pitchAmt)
-      const oscs = [0, 1, 2].map(() => {
-        const osc = ctx.createOscillator()
-        const lv = ctx.createGain()
-        osc.connect(lv).connect(g)
-        pitchAmt.connect(osc.detune)
-        osc.start()
-        return { osc, lv, ratio: 1, cents: 0 }
-      })
-      lfoPan.start()
-      lfoQuad.start()
-      this.voices.push({ g, trem, oscs, midi: null, lfoPan, lfoQuad, panAmt, ampAmt, pitchAmt })
+    // (Doppler). Les voix circulent ainsi l'une après l'autre.
+    this.layers = {}
+    for (const id of ARCHETYPES) {
+      const P = PROFILES[id]
+      const gain = ctx.createGain()
+      gain.gain.value = 0
+      gain.connect(this.filter)
+      const voices = []
+      for (let v = 0; v < VOICES; v++) {
+        const g = ctx.createGain()
+        g.gain.value = 0
+        const trem = ctx.createGain()
+        trem.gain.value = 1 - P.rotation.amp
+        const vp = ctx.createStereoPanner()
+        g.connect(trem).connect(vp).connect(gain)
+        const lfoPan = ctx.createOscillator()
+        const lfoQuad = ctx.createOscillator()
+        const panAmt = ctx.createGain()
+        const ampAmt = ctx.createGain()
+        const pitchAmt = ctx.createGain()
+        panAmt.gain.value = P.rotation.pan
+        ampAmt.gain.value = P.rotation.amp
+        pitchAmt.gain.value = P.rotation.pitch
+        lfoPan.connect(panAmt).connect(vp.pan)
+        lfoQuad.connect(ampAmt).connect(trem.gain)
+        lfoQuad.connect(pitchAmt)
+        const oscs = P.voice.map((d) => {
+          const osc = ctx.createOscillator()
+          osc.type = d.type
+          const lv = ctx.createGain()
+          lv.gain.value = d.level
+          osc.connect(lv).connect(g)
+          pitchAmt.connect(osc.detune)
+          osc.start()
+          return { osc, ratio: d.ratio, cents: d.cents }
+        })
+        lfoPan.start()
+        lfoQuad.start()
+        voices.push({ g, trem, oscs, midi: null, lfoPan, lfoQuad, panAmt, ampAmt, pitchAmt })
+      }
+      this.layers[id] = { gain, voices }
     }
     this.setRotationDir(1)
 
@@ -264,11 +294,13 @@ export class AmbientEngine {
     this.sub.connect(this.subGain).connect(this.master)
     this.sub.start()
 
-    // État harmonique.
+    // État harmonique, commun à toutes les couches.
+    this.w = { skyrmion: 1, labyrinth: 0, vortex: 0 }
     this.chordIdx = 0
+    this.progression = PROFILES.skyrmion.progression
     this.key = 0 // transposition accumulée par les grands pics (demi-tons)
     this.voicing = VOICINGS[0]
-    this.mode = 'ionian'
+    this.mode = 'dorian'
     this.nNotes = 3
     this.poleShift = 0
     this.detune = 4
@@ -276,18 +308,24 @@ export class AmbientEngine {
     this.qSince = 0
     this.lastBell = -Infinity
     this.lastMod = -Infinity
-    this.world = null
-    this.applyProfile('skyrmion', true)
+    this.peaks = new PeakDetector()
+    this.started = null
+    this.lastChange = 0
+    this.fresh = true
+    this.harmDom = 'skyrmion' // archétype qui a fixé l'harmonie en cours
+    this.domSince = 0
+    this.lastSimT = null
+    this.applyChord(true)
   }
 
-  // Sens de rotation : l'ordre des phases entre voix fixe le sens de circulation.
-  setRotationDir(dir) {
-    this.rotDir = dir
-    this.voices.forEach((voice, v) => {
-      const phi = (dir * 2 * Math.PI * v) / VOICES
-      voice.lfoPan.setPeriodicWave(phaseWave(this.ctx, phi))
-      voice.lfoQuad.setPeriodicWave(phaseWave(this.ctx, phi + Math.PI / 2))
-    })
+  // Simulation relancée (monde choisi, « Relancer ») : pas de cloche pour le
+  // saut de Q, nouvelle statistique des pics, harmonie reprise de l'état mesuré.
+  reset(t) {
+    this.qShown = null
+    this.qSince = 0
+    this.started = t
+    this.peaks = new PeakDetector()
+    this.fresh = true
   }
 
   get running() {
@@ -321,70 +359,34 @@ export class AmbientEngine {
     return SCALES[this.scale === 'auto' ? this.mode : this.scale].steps
   }
 
-  // Change d'instrument : fondu au silence, nouveaux réglages, fondu retour.
-  applyProfile(world, instant) {
-    const P = PROFILES[world] || PROFILES.skyrmion
-    this.world = world
-    this.P = P
-    const t = this.ctx.currentTime
-    this.peaks = new PeakDetector()
-    this.worldStart = t
-    this.lastChange = t
-    this.chordIdx = 0
-    this.key = 0
-    this.voicing = VOICINGS[0]
-    this.qShown = null
-    this.fresh = true // mode et nombre de notes pris à la prochaine mesure
-    const set = () => {
-      const now = this.ctx.currentTime
-      for (const voice of this.voices) {
-        voice.oscs.forEach((o, k) => {
-          const d = P.voice[k]
-          o.osc.type = d.type
-          o.ratio = d.ratio
-          o.cents = d.cents
-          o.lv.gain.setValueAtTime(d.level, now)
-        })
-      }
-      this.lfo.frequency.setValueAtTime(P.lfo.rate, now)
-      this.lfoAmt.gain.setValueAtTime(P.lfo.depth, now)
-      for (const voice of this.voices) {
-        voice.panAmt.gain.setValueAtTime(P.rotation.pan, now)
-        voice.ampAmt.gain.setValueAtTime(P.rotation.amp, now)
-        voice.trem.gain.setValueAtTime(1 - P.rotation.amp, now)
-        voice.pitchAmt.gain.setValueAtTime(P.rotation.pitch, now)
-      }
-      this.noiseBand.frequency.setValueAtTime(P.noise.freq, now)
-      this.noiseBand.Q.setValueAtTime(P.noise.q, now)
-      this.delay.delayTime.setValueAtTime(P.delay.time, now)
-      this.fb.gain.setValueAtTime(P.delay.fb, now)
-      this.wet.gain.setValueAtTime(P.reverb, now)
-      this.filter.Q.setValueAtTime(P.filter.q, now)
-      this.applyChord(true)
-      this.bus.gain.setTargetAtTime(1, now, instant ? 0.01 : 0.8)
+  // Sens de rotation : l'ordre des phases entre voix fixe le sens de circulation.
+  setRotationDir(dir) {
+    this.rotDir = dir
+    for (const id of ARCHETYPES) {
+      this.layers[id].voices.forEach((voice, v) => {
+        const phi = (dir * 2 * Math.PI * v) / VOICES
+        voice.lfoPan.setPeriodicWave(phaseWave(this.ctx, phi))
+        voice.lfoQuad.setPeriodicWave(phaseWave(this.ctx, phi + Math.PI / 2))
+      })
     }
-    if (instant) {
-      set()
-      return
-    }
-    this.bus.gain.setTargetAtTime(0, t, 0.12)
-    setTimeout(set, 500)
   }
 
-  // Répartit les notes de l'accord courant sur les voix (glissando lent).
+  // Répartit les notes de l'accord courant sur les voix de chaque couche
+  // (même degré et même gamme ; chaque couche garde sa forme d'accord).
   applyChord(instant) {
     const t = this.ctx.currentTime
-    const P = this.P
     const steps = this.steps()
-    const root = P.root + this.key + this.poleShift
-    const deg = P.progression[this.chordIdx % P.progression.length]
-    for (let v = 0; v < VOICES; v++) {
-      const voice = this.voices[v]
-      voice.midi = noteOf(root, steps, deg + P.chord[v], this.voicing[v])
-      this.tune(voice, instant ? 0 : 0.8)
-      // Les voix au-delà du nombre de notes voulu s'éteignent doucement.
-      const on = v < this.nNotes ? 0.22 / Math.sqrt(this.nNotes) : 0
-      voice.g.gain.setTargetAtTime(on, t, instant ? 0.01 : 2.5)
+    const root = ROOT + this.key + this.poleShift
+    const deg = this.progression[this.chordIdx % this.progression.length]
+    for (const id of ARCHETYPES) {
+      const P = PROFILES[id]
+      this.layers[id].voices.forEach((voice, v) => {
+        voice.midi = noteOf(root, steps, deg + P.chord[v], P.octave + this.voicing[v])
+        this.tune(voice, instant ? 0 : 0.8)
+        // Les voix au-delà du nombre de notes voulu s'éteignent doucement.
+        const on = v < this.nNotes ? 0.22 / Math.sqrt(this.nNotes) : 0
+        voice.g.gain.setTargetAtTime(on, t, instant ? 0.01 : 2.5)
+      })
     }
     this.sub.frequency.setTargetAtTime(midiHz(root - 24), t, instant ? 0.01 : 0.8)
   }
@@ -404,9 +406,9 @@ export class AmbientEngine {
   //  degré — au plus une modulation toutes les 30 s.
   harmonicStep(strength, pending) {
     const t = this.ctx.currentTime
-    this.mode = pending.mode
-    this.nNotes = pending.nNotes
-    this.poleShift = pending.poleShift
+    Object.assign(this, pending)
+    this.harmDom = dominant(this.w)
+    this.domSince = 0
     if (strength >= 3.5 && t - this.lastMod > MOD_GAP) {
       this.lastMod = t
       const moves = [5, -5, 7, -7].filter((m) => Math.abs(this.key + m) <= 7)
@@ -428,16 +430,16 @@ export class AmbientEngine {
     this.filter.detune.setTargetAtTime(0, t + 0.05, 0.8)
   }
 
-  // Cloche FM courte, très réverbérée, sur une note de l'accord.
+  // Cloche FM courte, avec le timbre de l'archétype dominant.
   bell(up) {
-    const B = this.P.bell
+    const P = PROFILES[dominant(this.w)]
+    const B = P.bell
     const ctx = this.ctx
     const t = ctx.currentTime
-    if (!B || t - this.lastBell < B.gap) return
+    if (t - this.lastBell < B.gap) return
     this.lastBell = t
-    const P = this.P
-    const deg = P.progression[this.chordIdx % P.progression.length] + P.chord[Math.floor(Math.random() * 3)]
-    const f = midiHz(noteOf(P.root + this.key + this.poleShift, this.steps(), deg, B.octave + (up ? 1 : 0)))
+    const deg = this.progression[this.chordIdx % this.progression.length] + P.chord[Math.floor(Math.random() * 3)]
+    const f = midiHz(noteOf(ROOT + this.key + this.poleShift, this.steps(), deg, B.octave + (up ? 1 : 0)))
     const car = ctx.createOscillator()
     const mod = ctx.createOscillator()
     const modAmt = ctx.createGain()
@@ -467,60 +469,107 @@ export class AmbientEngine {
 
   update(f) {
     if (!this.running) return
-    if (f.world && f.world !== this.world) this.applyProfile(f.world, false)
-    const P = this.P
     const t = this.ctx.currentTime
+    if (this.started === null) {
+      this.started = t
+      this.lastChange = t
+    }
+    if (f.simTime !== undefined) {
+      if (this.lastSimT !== null && f.simTime < this.lastSimT) this.reset(t)
+      this.lastSimT = f.simTime
+    }
     const a = clamp01(f.activity)
-    const walls = clamp01(f.walls)
+    // Densité de motifs (parois, bandes, bulles), d'après la texture : ≈ 0,1
+    // pour un skyrmion isolé ou un vortex, 1 pour un labyrinthe.
+    const dens = clamp01((f.texture ?? 0) / 0.15)
     const inPlane = clamp01(f.inPlane || 0)
     const m = f.magnet
 
-    // --- Timbre, en continu ---
+    // --- Position sur la carte : poids des trois couches ---
+    const w = soundMap(f)
+    this.w = w
+    for (const id of ARCHETYPES) this.layers[id].gain.gain.setTargetAtTime(Math.sqrt(w[id]), t, 1.5)
+
+    // --- Timbre, en continu, mélange pondéré des archétypes ---
     this.padGain.gain.setTargetAtTime(0.18 + 0.5 * a, t, 1.2)
-    this.filter.frequency.setTargetAtTime(P.filter.base + P.filter.act * a * a + P.filter.walls * walls, t, 1.5)
-    this.detune = P.detune[0] + P.detune[1] * walls
-    for (const voice of this.voices) if (voice.midi !== null) this.tune(voice, 1)
-    this.delaySend.gain.setTargetAtTime(P.delay.send * (0.6 + 1.5 * walls), t, 2)
-    this.noiseGain.gain.setTargetAtTime(P.noise.level * (0.25 + 1.5 * walls) * (0.3 + a), t, 1)
+    const cutoff = mixFreq(w, (P) => P.filter.base) + mix(w, (P) => P.filter.act) * a * a + mix(w, (P) => P.filter.motifs) * dens
+    this.filter.frequency.setTargetAtTime(cutoff, t, 1.5)
+    this.filter.Q.setTargetAtTime(mix(w, (P) => P.filter.q), t, 1.5)
+    this.lfo.frequency.setTargetAtTime(mix(w, (P) => P.lfo.rate), t, 2)
+    this.lfoAmt.gain.setTargetAtTime(mix(w, (P) => P.lfo.depth), t, 2)
+    this.detune = mix(w, (P) => P.detune[0]) + mix(w, (P) => P.detune[1]) * dens
+    for (const id of ARCHETYPES) for (const voice of this.layers[id].voices) this.tune(voice, 1)
+    this.delay.delayTime.setTargetAtTime(mix(w, (P) => P.delay.time), t, 3)
+    this.fb.gain.setTargetAtTime(mix(w, (P) => P.delay.fb), t, 2)
+    this.delaySend.gain.setTargetAtTime(mix(w, (P) => P.delay.send) * (0.6 + 1.5 * dens), t, 2)
+    this.wet.gain.setTargetAtTime(mix(w, (P) => P.reverb), t, 2)
+    this.noiseBand.frequency.setTargetAtTime(mixFreq(w, (P) => P.noise.freq), t, 2)
+    this.noiseBand.Q.setTargetAtTime(mix(w, (P) => P.noise.q), t, 2)
+    this.noiseGain.gain.setTargetAtTime(mix(w, (P) => P.noise.level) * (0.25 + 1.5 * dens) * (0.3 + a), t, 1)
     this.pan.pan.setTargetAtTime(m ? (m.x * 2 - 1) * 0.7 : 0, t, 0.6)
-    this.subGain.gain.setTargetAtTime(P.sub + (m ? 0.25 * m.strength : 0), t, m ? 0.8 : 2)
+    this.subGain.gain.setTargetAtTime(mix(w, (P) => P.sub) + (m ? 0.25 * m.strength : 0), t, m ? 0.8 : 2)
 
     // Rotation : vitesse selon l'agitation et le décalage du cœur ; sens selon
-    // l'enroulement (change seulement si l'enroulement est net).
-    const rate = P.rotation.rate * (1 + 3 * a + 2 * inPlane)
-    for (const voice of this.voices) {
-      voice.lfoPan.frequency.setTargetAtTime(rate, t, 2)
-      voice.lfoQuad.frequency.setTargetAtTime(rate, t, 2)
-    }
+    // l'enroulement. Pour la couche tourbillon, l'amplitude suit l'enroulement
+    // mesuré (≈ 0,65 pour un vortex, 0 pour une aimantation couchée uniforme).
     const circ = f.circulation || 0
+    const swirl = 0.15 + 0.85 * Math.min(1, Math.abs(circ) / 0.5)
+    for (const id of ARCHETYPES) {
+      const R = PROFILES[id].rotation
+      const rate = R.rate * (1 + 3 * a + 2 * inPlane)
+      const k = id === 'vortex' ? swirl : 1
+      for (const voice of this.layers[id].voices) {
+        voice.lfoPan.frequency.setTargetAtTime(rate, t, 2)
+        voice.lfoQuad.frequency.setTargetAtTime(rate, t, 2)
+        if (id === 'vortex') {
+          voice.panAmt.gain.setTargetAtTime(R.pan * k, t, 1.5)
+          voice.ampAmt.gain.setTargetAtTime(R.amp * k, t, 1.5)
+          voice.trem.gain.setTargetAtTime(1 - R.amp * k, t, 1.5)
+          voice.pitchAmt.gain.setTargetAtTime(R.pitch * k, t, 1.5)
+        }
+      }
+    }
     if (Math.abs(circ) > 0.2 && Math.sign(circ) !== this.rotDir) this.setRotationDir(Math.sign(circ))
 
     // --- Cloche : Q s'écarte franchement de sa dernière valeur et y reste ---
+    const B = PROFILES[dominant(w)].bell
     if (this.qShown === null) this.qShown = f.Q
     if (Math.abs(f.Q - this.qShown) > Q_HYST) {
       if (!this.qSince) this.qSince = t
-      if (P.bell && t - this.qSince > P.bell.stable) {
-        // Pas de cloche pendant que le nouveau monde se met en place.
-        if (t - this.worldStart > WARMUP) this.bell(Math.abs(f.Q) > Math.abs(this.qShown))
+      if (t - this.qSince > B.stable) {
+        if (t - this.started > WARMUP) this.bell(Math.abs(f.Q) > Math.abs(this.qShown))
         this.qShown = f.Q
         this.qSince = 0
       }
     } else this.qSince = 0
 
     // --- Harmonie, seulement sur un pic (ou après un long calme) ---
+    const dom = PROFILES[dominant(w)]
     const pending = {
-      mode: P.mode({ ...f, inPlane }),
-      nNotes: Math.min(VOICES, 2 + Math.min(Math.round(Math.abs(this.qShown)), 2) + (walls > 0.2 ? 1 : 0)),
+      mode: dom.mode({ ...f, inPlane }),
+      progression: dom.progression,
+      nNotes: Math.min(VOICES, 2 + Math.min(Math.round(Math.abs(this.qShown)), 2) + (dens > 0.5 ? 1 : 0)),
       poleShift: m && m.pole === 'S' ? 7 : 0,
     }
     if (this.fresh) {
-      // Nouveau monde : l'harmonie part directement de l'état mesuré.
+      // Démarrage ou relance : l'harmonie part directement de l'état mesuré.
       this.fresh = false
       Object.assign(this, pending)
+      this.harmDom = dominant(w)
+      this.lastChange = t
       this.applyChord(false)
     }
+    // Le film a changé de nature (archétype dominant différent depuis 2 s) :
+    // l'harmonie bascule vers celle du nouvel archétype.
+    const domNow = dominant(w)
+    let domShift = false
+    if (domNow !== this.harmDom) {
+      if (!this.domSince) this.domSince = t
+      domShift = t - this.domSince > DOM_HOLD
+    } else this.domSince = 0
     const peak = this.peaks.push(t, featureVector({ ...f, inPlane }))
-    if (peak && t - this.worldStart > WARMUP) this.harmonicStep(peak, pending)
+    if (peak && t - this.started > WARMUP) this.harmonicStep(peak, pending)
+    else if (domShift) this.harmonicStep(1.6, pending)
     else if (t - this.lastChange > FALLBACK) this.harmonicStep(1, pending)
   }
 }

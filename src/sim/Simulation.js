@@ -280,6 +280,9 @@ export class Simulation {
     let sx = 0
     let sy = 0
     let circ = 0
+    let planar = 0
+    let texture = 0
+    const { nbR, nbU } = c
     const cx = c.nx / 2
     const cy = c.ny / 2
     const R = Math.max(c.nx, c.ny) / 2
@@ -300,19 +303,31 @@ export class Simulation {
       const x = ((i % c.nx) + 0.5 - cx) / R
       const y = (Math.floor(i / c.nx) + 0.5 - cy) / R
       circ += x * my[i] - y * mx[i]
+      planar += 1 - mz[i] * mz[i]
+      // Texture : écart de m avec ses voisins de droite et du haut.
+      const r = nbR[i]
+      const u = nbU[i]
+      texture +=
+        (mx[i] - mx[r]) ** 2 + (my[i] - my[r]) ** 2 + (mz[i] - mz[r]) ** 2 +
+        (mx[i] - mx[u]) ** 2 + (my[i] - my[u]) ** 2 + (mz[i] - mz[u]) ** 2
     }
     d = ((d / n) * 0.1) / Math.max(elapsed, 0.02)
     const activity = clamp((Math.log10(d + 1e-9) + 2.6) / 2.2, 0, 1)
     // inPlane : |⟨m∥⟩|, nul pour un vortex centré, croît quand son cœur se décale.
     return {
-      world: this.p.world,
       activity,
       walls: walls / n,
       mz: sz / n,
       inPlane: Math.hypot(sx, sy) / n,
       // circulation > 0 : enroulement antihoraire (≈ 0,6 pour un vortex).
       circulation: circ / n,
+      // planar : ⟨1 − mz²⟩, 0 hors du plan, 1 couché dans le plan.
+      planar: planar / n,
+      // texture : ⟨|∇m|²⟩ par cellule, 0 pour tout état uniforme.
+      texture: texture / n,
       Q: this.stats ? this.stats.Q : 0,
+      // Temps simulé : s'il recule, la simulation a été relancée.
+      simTime: this.t,
     }
   }
 
