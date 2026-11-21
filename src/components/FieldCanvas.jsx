@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { GLRenderer } from '../sim/glRenderer.js'
-import { CpuRenderer, ComponentScale, computeLayout, drawArrows, toCell } from '../sim/renderer.js'
+import { CpuRenderer, ComponentScale, computeLayout, drawArrows, drawFieldLines, fieldLinePaths, toCell } from '../sim/renderer.js'
 
 // Paramètres de l'aimant pour Simulation.setMagnet ; position en cellules
 // (sans borne : un aimant hors du film agit encore sur ses bords).
@@ -58,6 +58,9 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats }
     let lastStats = 0
     // Position du pointeur (px CSS) quand l'aimant est actif, sinon null.
     let pointer = null
+    // Lignes de champ recalculées une image sur deux (coût CPU).
+    let linePaths = null
+    let lineAge = 0
 
     const resize = () => {
       dpr = window.devicePixelRatio || 1
@@ -91,6 +94,14 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats }
         } else {
           cpu.render(core, lay, W, H, opts)
         }
+        if (view.lines) {
+          const stale = !linePaths || linePaths.core !== core || linePaths.lay.s !== lay.s || linePaths.lay.x0 !== lay.x0 || linePaths.lay.y0 !== lay.y0
+          if (stale || ++lineAge >= (running ? 2 : 10)) {
+            linePaths = fieldLinePaths(core, lay)
+            lineAge = 0
+          }
+          drawFieldLines(octx, linePaths)
+        } else linePaths = null
         if (view.arrows) drawArrows(octx, core, lay)
         if (magnet) drawMagnet(octx, pointer, (magnet.height * 1e-9 * lay.s) / core.dx)
         if (now - lastStats > 200) {

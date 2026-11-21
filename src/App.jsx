@@ -14,7 +14,7 @@ export default function App() {
   const [applied, setApplied] = useState(DEFAULT_PARAMS)
   const [sim, setSim] = useState(() => makeSim(DEFAULT_PARAMS))
   const [running, setRunning] = useState(true)
-  const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false })
+  const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false, lines: false })
   const [speed, setSpeed] = useState(1)
   // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
   const [tool, setTool] = useState({ kind: 'magnet', strength: 2500, height: 30, pole: 'N' })
