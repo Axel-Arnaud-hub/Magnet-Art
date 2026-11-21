@@ -8,7 +8,7 @@ const DEFAULT_WORLD = 'skyrmion'
 
 // Monde + paramètres réglables. Plein écran : le film prend le ratio de la fenêtre.
 function makeSim(world, phys) {
-  const params = { ...WORLDS[world], ...phys }
+  const params = { ...WORLDS[world], ...phys, world }
   const p = params.fill ? fitToAspect(params, window.innerHeight / window.innerWidth) : params
   return new Simulation(p)
 }

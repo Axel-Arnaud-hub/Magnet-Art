@@ -277,6 +277,12 @@ export class Simulation {
     let d = 0
     let walls = 0
     let sz = 0
+    let sx = 0
+    let sy = 0
+    let circ = 0
+    const cx = c.nx / 2
+    const cy = c.ny / 2
+    const R = Math.max(c.nx, c.ny) / 2
     for (let q = 0; q < n; q++) {
       const i = act[q]
       const ax = mx[i] - pm[i]
@@ -288,10 +294,26 @@ export class Simulation {
       pm[o2 + i] = mz[i]
       if (Math.abs(mz[i]) < 0.5) walls++
       sz += mz[i]
+      sx += mx[i]
+      sy += my[i]
+      // Enroulement autour du centre : (r × m)_z, r en unités du demi-film.
+      const x = ((i % c.nx) + 0.5 - cx) / R
+      const y = (Math.floor(i / c.nx) + 0.5 - cy) / R
+      circ += x * my[i] - y * mx[i]
     }
     d = ((d / n) * 0.1) / Math.max(elapsed, 0.02)
     const activity = clamp((Math.log10(d + 1e-9) + 2.6) / 2.2, 0, 1)
-    return { activity, walls: walls / n, mz: sz / n, Q: this.stats ? this.stats.Q : 0 }
+    // inPlane : |⟨m∥⟩|, nul pour un vortex centré, croît quand son cœur se décale.
+    return {
+      world: this.p.world,
+      activity,
+      walls: walls / n,
+      mz: sz / n,
+      inPlane: Math.hypot(sx, sy) / n,
+      // circulation > 0 : enroulement antihoraire (≈ 0,6 pour un vortex).
+      circulation: circ / n,
+      Q: this.stats ? this.stats.Q : 0,
+    }
   }
 
   computeStats() {
