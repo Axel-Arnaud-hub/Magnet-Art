@@ -26,14 +26,14 @@ function drawMagnet(ctx, p, r) {
 
 // Plein écran : boucle d'animation, intégration LLG et rendu.
 // Canvas du dessous : champ (WebGL2, ou 2D en secours). Canvas du dessus : flèches.
-export default function FieldCanvas({ sim, running, view, speed, tool, onStats }) {
+export default function FieldCanvas({ sim, running, view, speed, tool, onStats, engine }) {
   const glRef = useRef(null)
   const overlayRef = useRef(null)
-  const live = useRef({ sim, running, view, speed, tool, onStats })
+  const live = useRef({ sim, running, view, speed, tool, onStats, engine })
 
   useEffect(() => {
-    live.current = { sim, running, view, speed, tool, onStats }
-  }, [sim, running, view, speed, tool, onStats])
+    live.current = { sim, running, view, speed, tool, onStats, engine }
+  }, [sim, running, view, speed, tool, onStats, engine])
 
   useEffect(() => {
     const glCanvas = glRef.current
@@ -56,6 +56,7 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats }
     let raf = 0
     let last = performance.now()
     let lastStats = 0
+    let lastAudio = 0
     // Position du pointeur (px CSS) quand l'aimant est actif, sinon null.
     let pointer = null
 
@@ -96,6 +97,13 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats }
         if (now - lastStats > 200) {
           lastStats = now
           onStats(sim.computeStats())
+        }
+        const audio = live.current.engine.current
+        if (audio && audio.running && now - lastAudio > 100) {
+          const f = sim.audioFeatures((now - lastAudio) / 1000)
+          lastAudio = now
+          f.magnet = magnet && { x: Math.min(Math.max(magnet.cx / core.nx, 0), 1), strength: magnet.strength / 5000, pole: magnet.pole }
+          audio.update(f)
         }
       }
       raf = requestAnimationFrame(frame)

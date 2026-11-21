@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import FieldCanvas from './components/FieldCanvas.jsx'
 import ControlPanel from './components/ControlPanel.jsx'
 import { DEFAULT_PARAMS, Simulation, fitToAspect } from './sim/Simulation.js'
+import { AmbientEngine } from './audio/AmbientEngine.js'
 
 // Paramètres effectifs : si « plein écran », le film prend le ratio de la fenêtre.
 function makeSim(params) {
@@ -19,6 +20,20 @@ export default function App() {
   // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
   const [tool, setTool] = useState({ kind: 'magnet', strength: 2500, height: 30, pole: 'N' })
   const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
+  // Son : le moteur est créé au premier clic (les navigateurs l'exigent).
+  const engine = useRef(null)
+  const [audio, setAudioState] = useState({ on: false, volume: 0.6, scale: 'auto' })
+
+  const setAudio = useCallback(async (next) => {
+    setAudioState(next)
+    if (next.on && !engine.current) engine.current = new AmbientEngine()
+    const e = engine.current
+    if (!e) return
+    e.setVolume(next.volume)
+    if (e.scale !== next.scale) e.setScale(next.scale)
+    if (next.on && !e.wanted) await e.start()
+    else if (!next.on && e.wanted) await e.stop()
+  }, [])
 
   const dirty = draft !== applied
 
@@ -48,7 +63,7 @@ export default function App() {
 
   return (
     <>
-      <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} onStats={setStats} />
+      <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} onStats={setStats} engine={engine} />
       <ControlPanel
         draft={draft}
         setDraft={setDraft}
@@ -63,6 +78,8 @@ export default function App() {
         stats={stats}
         tool={tool}
         setTool={setTool}
+        audio={audio}
+        setAudio={setAudio}
         grid={[sim.p.nx, sim.p.ny, sim.p.Lx, sim.p.Ly]}
       />
     </>

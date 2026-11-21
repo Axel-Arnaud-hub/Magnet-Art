@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PALETTES, CYCLIC_PALETTES, LINEAR_PALETTES } from '../sim/palettes.js'
+import { SCALES } from '../audio/AmbientEngine.js'
 import { MATERIALS, INITIAL_STATES, SHAPES, PARAM_SPEC, presetParams } from '../sim/Simulation.js'
 
 const MATERIAL_KEYS = new Set(['Ms', 'A', 'K', 'D', 'alpha'])
@@ -37,7 +38,7 @@ function Group({ title, children }) {
   )
 }
 
-export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid, tool, setTool }) {
+export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid, tool, setTool, audio, setAudio }) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
 
@@ -169,6 +170,28 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
               <input type="range" min="0.1" max="4" step="0.1" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
               <span className="unit">×{speed.toFixed(1)}</span>
             </label>
+          </Group>
+
+          <Group title="Son">
+            <label className="row check">
+              <input type="checkbox" checked={audio.on} onChange={(e) => setAudio({ ...audio, on: e.target.checked })} />
+              <span>Nappe ambient</span>
+            </label>
+            {audio.on && (
+              <>
+                <label className="row">
+                  <span className="lbl">Volume</span>
+                  <input type="range" min="0" max="1" step="0.05" value={audio.volume} onChange={(e) => setAudio({ ...audio, volume: Number(e.target.value) })} />
+                  <span className="unit">{Math.round(audio.volume * 100)}</span>
+                </label>
+                <label className="row">
+                  <span className="lbl">Gamme</span>
+                  <select value={audio.scale} onChange={(e) => setAudio({ ...audio, scale: e.target.value })}>
+                    {Object.entries(SCALES).map(([id, sc]) => <option key={id} value={id}>{sc.label}</option>)}
+                  </select>
+                </label>
+              </>
+            )}
           </Group>
 
           <div className="actions">

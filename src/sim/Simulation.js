@@ -246,6 +246,42 @@ export class Simulation {
     }
   }
 
+  // Grandeurs pour la sonification. `elapsed` = temps réel (s) depuis l'appel
+  // précédent. activity : |Δm| moyen ramené à 100 ms, en échelle log
+  // (≈ 0 au repos, ≈ 0.5 pour un skyrmion poussé, 1 pour un état désordonné).
+  audioFeatures(elapsed) {
+    const c = this.core
+    const { act, mx, my, mz } = c
+    const n = act.length
+    if (!this.prevM || this.prevM.length !== 3 * c.n) {
+      this.prevM = new Float64Array(3 * c.n)
+      this.prevM.set(mx, 0)
+      this.prevM.set(my, c.n)
+      this.prevM.set(mz, 2 * c.n)
+    }
+    const pm = this.prevM
+    const o1 = c.n
+    const o2 = 2 * c.n
+    let d = 0
+    let walls = 0
+    let sz = 0
+    for (let q = 0; q < n; q++) {
+      const i = act[q]
+      const ax = mx[i] - pm[i]
+      const ay = my[i] - pm[o1 + i]
+      const az = mz[i] - pm[o2 + i]
+      d += Math.sqrt(ax * ax + ay * ay + az * az)
+      pm[i] = mx[i]
+      pm[o1 + i] = my[i]
+      pm[o2 + i] = mz[i]
+      if (Math.abs(mz[i]) < 0.5) walls++
+      sz += mz[i]
+    }
+    d = ((d / n) * 0.1) / Math.max(elapsed, 0.02)
+    const activity = clamp((Math.log10(d + 1e-9) + 2.6) / 2.2, 0, 1)
+    return { activity, walls: walls / n, mz: sz / n, Q: this.stats ? this.stats.Q : 0 }
+  }
+
   computeStats() {
     const c = this.core
     const n = c.act.length
