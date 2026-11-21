@@ -1,122 +1,59 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useCallback, useEffect, useState } from 'react'
+import FieldCanvas from './components/FieldCanvas.jsx'
+import ControlPanel from './components/ControlPanel.jsx'
+import { DEFAULT_PARAMS, Simulation } from './sim/Simulation.js'
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [draft, setDraft] = useState(DEFAULT_PARAMS)
+  const [applied, setApplied] = useState(DEFAULT_PARAMS)
+  const [sim, setSim] = useState(() => new Simulation(DEFAULT_PARAMS))
+  const [running, setRunning] = useState(true)
+  const [view, setView] = useState({ mode: 'wheel', arrows: false })
+  const [speed, setSpeed] = useState(1)
+  const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
+
+  const dirty = draft !== applied
+
+  const launch = useCallback(() => {
+    setSim(new Simulation(draft))
+    setApplied(draft)
+    setRunning(true)
+  }, [draft])
+
+  const toggle = useCallback(() => setRunning((r) => !r), [])
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.closest('input, select, textarea')) return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        toggle()
+      } else if (e.key === 'r' || e.key === 'R') {
+        launch()
+      } else if (e.key === 'h' || e.key === 'H') {
+        document.body.classList.toggle('hide-ui')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [launch, toggle])
 
   return (
     <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
+      <FieldCanvas sim={sim} running={running} view={view} speed={speed} onStats={setStats} />
+      <ControlPanel
+        draft={draft}
+        setDraft={setDraft}
+        dirty={dirty}
+        running={running}
+        onLaunch={launch}
+        onToggle={toggle}
+        view={view}
+        setView={setView}
+        speed={speed}
+        setSpeed={setSpeed}
+        stats={stats}
+      />
     </>
   )
 }
-
-export default App
