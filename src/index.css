@@ -345,6 +345,11 @@ button:disabled {
   cursor: default;
 }
 
+.mag-read {
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 6px;
+}
+
 button.link {
   border: 0;
   padding: 4px 0 0;

@@ -3,6 +3,7 @@ import FieldCanvas from '../components/FieldCanvas.jsx'
 import ControlPanel from '../components/ControlPanel.jsx'
 import { WORLDS, Simulation, fitToAspect, worldPhys } from '../sim/Simulation.js'
 import { AmbientEngine } from '../audio/AmbientEngine.js'
+import { PhoneMagnetometer } from '../sensors/PhoneMagnetometer.js'
 
 const DEFAULT_WORLD = 'skyrmion'
 
@@ -38,6 +39,41 @@ export default function Sandbox() {
     else if (!next.on && e.wanted) await e.stop()
   }, [])
 
+  // Magnétomètre du téléphone : sa perturbation (champ moins champ ambiant)
+  // s'ajoute au champ extérieur, amplifiée : gain = mT simulés par mT réel.
+  const mag = useRef(null)
+  const [phone, setPhoneState] = useState({ on: false, gain: 100, status: '' })
+  const [phoneDelta, setPhoneDelta] = useState([0, 0, 0])
+
+  const setPhone = useCallback((next) => {
+    if (next.on && !mag.current) {
+      mag.current = new PhoneMagnetometer((status) => setPhoneState((p) => ({ ...p, status })))
+      mag.current.start()
+    } else if (!next.on && mag.current) {
+      mag.current.stop()
+      mag.current = null
+    }
+    setPhoneState((p) => ({ ...next, status: next.on ? p.status : '' }))
+  }, [])
+
+  const recalibrate = useCallback(() => mag.current?.recalibrate(), [])
+
+  useEffect(() => {
+    if (!phone.on) {
+      sim.setPhoneField([0, 0, 0])
+      return
+    }
+    const id = setInterval(() => {
+      if (!mag.current) return
+      const d = mag.current.delta() // µT
+      const k = phone.gain / 1000 // µT réels -> mT simulés
+      const lim = (v, m) => Math.max(-m, Math.min(m, v))
+      sim.setPhoneField([lim(d[0] * k, 300), lim(d[1] * k, 300), lim(d[2] * k, 500)])
+      setPhoneDelta(d)
+    }, 100)
+    return () => clearInterval(id)
+  }, [phone.on, phone.gain, sim])
+
   // A, K, D, B, démag : appliqués en direct, sans réinitialiser le film.
   const setPhys = useCallback(
     (next) => {
@@ -68,6 +104,8 @@ export default function Sandbox() {
     () => () => {
       engine.current?.ctx.close()
       engine.current = null
+      mag.current?.stop()
+      mag.current = null
       document.body.classList.remove('hide-ui')
     },
     [],
@@ -109,6 +147,10 @@ export default function Sandbox() {
         setTool={setTool}
         audio={audio}
         setAudio={setAudio}
+        phone={phone}
+        setPhone={setPhone}
+        phoneDelta={phoneDelta}
+        onRecalibrate={recalibrate}
       />
     </>
   )

@@ -3,6 +3,17 @@ import { PALETTES, CYCLIC_PALETTES, LINEAR_PALETTES } from '../sim/palettes.js'
 import { SCALES } from '../audio/AmbientEngine.js'
 import { WORLDS, PHYS_SPEC, B_INPLANE_MAX, worldPhys } from '../sim/Simulation.js'
 import Joystick from './Joystick.jsx'
+import { magnetometerSupport } from '../sensors/PhoneMagnetometer.js'
+
+const MAG_SUPPORT = magnetometerSupport()
+// Groupe affiché sur appareil tactile, ou dès que le capteur est disponible.
+const SHOW_PHONE = MAG_SUPPORT === 'ok' || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+
+const MAG_HELP = {
+  flag: 'Le magnétomètre est désactivé dans Chrome. Ouvre chrome://flags, cherche « Generic Sensor Extra Classes », passe-le à Enabled, puis relance Chrome.',
+  insecure: 'Le magnétomètre n’est accessible que sur une page https.',
+  none: 'Le magnétomètre n’est accessible que dans Chrome sur Android (pas sur iPhone).',
+}
 
 // Curseur : libellé et valeur au-dessus, glissière en dessous.
 function Slider({ label, unit, min, max, step, value, onChange, format }) {
@@ -49,7 +60,7 @@ function Group({ title, children }) {
 
 const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
 
-export default function ControlPanel({ world, onWorld, phys, setPhys, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, tool, setTool, audio, setAudio }) {
+export default function ControlPanel({ world, onWorld, phys, setPhys, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, tool, setTool, audio, setAudio, phone, setPhone, phoneDelta, onRecalibrate }) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
 
@@ -117,6 +128,41 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
               Valeurs par défaut du monde
             </button>
           </Group>
+
+          {SHOW_PHONE && (
+            <Group title="Téléphone">
+              {MAG_SUPPORT !== 'ok' ? (
+                <p className="hint">{MAG_HELP[MAG_SUPPORT]}</p>
+              ) : (
+                <>
+                  <label className="row check">
+                    <input type="checkbox" checked={phone.on} onChange={(e) => setPhone({ ...phone, on: e.target.checked })} />
+                    <span>Magnétomètre : approche un aimant du téléphone</span>
+                  </label>
+                  {phone.on && (
+                    <>
+                      {phone.status && phone.status !== 'ok' && <p className="hint">{phone.status}</p>}
+                      <p className="hint mag-read">
+                        ΔB mesuré {phoneDelta.map((v) => Math.round(v)).join(' / ')} µT
+                        <br />
+                        ajouté au film {phoneDelta.map((v) => Math.round((v * phone.gain) / 1000)).join(' / ')} mT (x / y / z)
+                      </p>
+                      <Slider
+                        label="Amplification"
+                        unit="×"
+                        min={10}
+                        max={1000}
+                        step={10}
+                        value={phone.gain}
+                        onChange={(gain) => setPhone({ ...phone, gain })}
+                      />
+                      <button onClick={onRecalibrate}>Recalibrer (téléphone immobile)</button>
+                    </>
+                  )}
+                </>
+              )}
+            </Group>
+          )}
 
           <Group title="Interaction">
             <Segmented

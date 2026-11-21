@@ -66,6 +66,8 @@ export class Simulation {
     this.t = 0
     // Temps simulé (s) par seconde réelle à vitesse 1.
     this.timeScale = 1.8e-9
+    // Champ ajouté par le magnétomètre du téléphone (mT), en plus du réglage.
+    this.phoneB = [0, 0, 0]
     this.build()
     this.init(this.p.initial)
   }
@@ -110,11 +112,32 @@ export class Simulation {
     c.A = p.A * 1e-12
     c.Kc = p.K * 1e3
     c.D = p.D * 1e-3
-    c.Bx = p.Bx * 1e-3
-    c.By = p.By * 1e-3
-    c.Bz = p.Bz * 1e-3
+    this.setFieldOnCore()
     c.prepare()
+    this.preparedB = Math.hypot(c.Bx, c.By, c.Bz)
     this.lex = Math.sqrt((2 * c.A) / (4e-7 * Math.PI * c.Ms * c.Ms))
+  }
+
+  setFieldOnCore() {
+    const p = this.p
+    const c = this.core
+    const pb = this.phoneB || [0, 0, 0]
+    c.Bx = (p.Bx + pb[0]) * 1e-3
+    c.By = (p.By + pb[1]) * 1e-3
+    c.Bz = (p.Bz + pb[2]) * 1e-3
+  }
+
+  // Champ du téléphone (mT, repère de l'écran), ajouté au champ réglé. Appelé
+  // ~10 fois par seconde : on ne recalcule le pas de temps (et le noyau FFT)
+  // que si le champ total dépasse nettement celui du dernier calcul.
+  setPhoneField(b) {
+    this.phoneB = b
+    this.setFieldOnCore()
+    const c = this.core
+    if (Math.hypot(c.Bx, c.By, c.Bz) > this.preparedB + 0.05) {
+      c.prepare()
+      this.preparedB = Math.hypot(c.Bx, c.By, c.Bz)
+    }
   }
 
   // Modifie A, K, D, B ou le champ démagnétisant sans réinitialiser
