@@ -30,8 +30,9 @@ function Group({ title, children }) {
   )
 }
 
-export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats }) {
-  const [open, setOpen] = useState(true)
+export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid }) {
+  // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
+  const [open, setOpen] = useState(() => window.innerWidth > 640)
 
   const set = (key, value) =>
     setDraft((d) => ({ ...d, [key]: value, ...(MATERIAL_KEYS.has(key) ? { material: 'custom' } : {}) }))
@@ -46,12 +47,15 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
   return (
     <aside className={'panel' + (open ? '' : ' closed')}>
       <header>
-        <button className="ghost" onClick={() => setOpen(!open)} title="Afficher / masquer (H)">
+        <button className="ghost" onClick={() => setOpen(!open)} title="Afficher / masquer" aria-label={open ? 'Replier' : 'Déplier'}>
           {open ? '–' : '+'}
         </button>
         <span className="stats">
           t {(stats.t * 1e9).toFixed(2)} ns · ⟨mz⟩ {stats.mz.toFixed(2)} · Q {stats.Q.toFixed(2)}
         </span>
+        <button className="ghost play" onClick={onToggle} aria-label={running ? 'Pause' : 'Reprendre'}>
+          {running ? '❚❚' : '▶'}
+        </button>
       </header>
 
       {open && (
@@ -68,7 +72,16 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
           <Group title="Champ extérieur">{fields('field')}</Group>
           <Group title="Matériau">{fields('material')}</Group>
           <Group title="Géométrie">
+            <label className="row check">
+              <input type="checkbox" checked={draft.fill} onChange={(e) => set('fill', e.target.checked)} />
+              <span>Plein écran (ratio de la fenêtre)</span>
+            </label>
             {fields('geometry')}
+            {draft.fill && (
+              <p className="hint">
+                Lx et Nx fixent la taille de cellule ; maillage actuel {grid[0]}×{grid[1]} ({Math.round(grid[2])}×{Math.round(grid[3])} nm)
+              </p>
+            )}
             <label className="row">
               <span className="lbl">Forme</span>
               <select value={draft.shape} onChange={(e) => set('shape', e.target.value)}>
@@ -114,7 +127,7 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
             </button>
             <button onClick={onToggle} title="Pause (Espace)">{running ? 'Pause' : 'Reprendre'}</button>
           </div>
-          <p className="hint">Clic sur le film : injecter un skyrmion</p>
+          <p className="hint">Toucher le film : injecter un skyrmion</p>
         </div>
       )}
     </aside>

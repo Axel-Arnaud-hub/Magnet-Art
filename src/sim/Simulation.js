@@ -55,7 +55,7 @@ export const PARAM_SPEC = {
 export function presetParams(id) {
   const rest = { ...MATERIALS[id] }
   delete rest.label
-  return { material: id, shape: 'rectangle', ...rest }
+  return { material: id, shape: 'rectangle', fill: true, ...rest }
 }
 
 export const DEFAULT_PARAMS = presetParams('sky')
@@ -73,6 +73,20 @@ export function sanitize(raw) {
   p.ny = Math.floor(p.ny)
   p.demag = !!p.demag
   return p
+}
+
+// Adapte le film au rapport hauteur/largeur de l'écran : même taille de cellule
+// (Lx/Nx) et à peu près le même nombre de cellules, pour un coût de calcul inchangé.
+export function fitToAspect(raw, aspect) {
+  const p = sanitize(raw)
+  const cell = p.Lx / p.nx
+  const n = p.nx * p.ny
+  let nx = Math.round(Math.sqrt(n / aspect))
+  let ny = Math.round(nx * aspect)
+  const k = Math.min(1, 128 / Math.max(nx, ny))
+  nx = clamp(Math.round(nx * k), 12, 128)
+  ny = clamp(Math.round(ny * k), 12, 128)
+  return { ...p, nx, ny, Lx: nx * cell, Ly: ny * cell }
 }
 
 export class Simulation {

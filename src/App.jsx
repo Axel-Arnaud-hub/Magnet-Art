@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import FieldCanvas from './components/FieldCanvas.jsx'
 import ControlPanel from './components/ControlPanel.jsx'
-import { DEFAULT_PARAMS, Simulation } from './sim/Simulation.js'
+import { DEFAULT_PARAMS, Simulation, fitToAspect } from './sim/Simulation.js'
+
+// Paramètres effectifs : si « plein écran », le film prend le ratio de la fenêtre.
+function makeSim(params) {
+  const p = params.fill ? fitToAspect(params, window.innerHeight / window.innerWidth) : params
+  return new Simulation(p)
+}
 
 export default function App() {
   const [draft, setDraft] = useState(DEFAULT_PARAMS)
   const [applied, setApplied] = useState(DEFAULT_PARAMS)
-  const [sim, setSim] = useState(() => new Simulation(DEFAULT_PARAMS))
+  const [sim, setSim] = useState(() => makeSim(DEFAULT_PARAMS))
   const [running, setRunning] = useState(true)
   const [view, setView] = useState({ mode: 'wheel', arrows: false })
   const [speed, setSpeed] = useState(1)
@@ -15,7 +21,7 @@ export default function App() {
   const dirty = draft !== applied
 
   const launch = useCallback(() => {
-    setSim(new Simulation(draft))
+    setSim(makeSim(draft))
     setApplied(draft)
     setRunning(true)
   }, [draft])
@@ -53,6 +59,7 @@ export default function App() {
         speed={speed}
         setSpeed={setSpeed}
         stats={stats}
+        grid={[sim.p.nx, sim.p.ny, sim.p.Lx, sim.p.Ly]}
       />
     </>
   )

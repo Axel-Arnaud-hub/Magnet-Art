@@ -21,6 +21,7 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: #000;
 }
 
@@ -66,6 +67,10 @@ body,
 }
 
 .stats {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--dim);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -197,4 +202,76 @@ button.primary.dirty {
   margin: 8px 0 0;
   color: var(--dim);
   font-size: 11px;
+}
+
+button.play {
+  font-size: 11px;
+}
+
+/* ---- téléphone : panneau en bas, plein largeur ---- */
+
+@media (max-width: 640px) {
+  :root {
+    font-size: 14px;
+  }
+
+  .panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 62dvh;
+    border-width: 1px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .panel.closed {
+    width: 100%;
+  }
+
+  .panel header {
+    position: sticky;
+    top: 0;
+    background: #000;
+    padding: 10px 12px;
+    z-index: 1;
+  }
+
+  button.ghost {
+    font-size: 20px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  button.play {
+    font-size: 14px;
+  }
+
+  .body {
+    padding: 0 14px 14px;
+  }
+
+  .row {
+    grid-template-columns: 64px 1fr 56px;
+    gap: 10px;
+    margin: 6px 0;
+  }
+
+  /* 16px minimum : évite le zoom automatique d'iOS au focus */
+  input,
+  select,
+  button {
+    font-size: 16px;
+    padding: 7px 8px;
+  }
+
+  input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+
+  .actions button {
+    padding: 12px;
+  }
 }

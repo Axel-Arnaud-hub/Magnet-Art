@@ -39,7 +39,7 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
       if (sim) {
         if (running) sim.advance(dtReal, speed)
         renderer.paint(sim.core, view.mode)
-        renderer.draw(ctx, W, H, Math.min(W, H) * 0.06)
+        renderer.draw(ctx, W, H, sim.p.fill)
         if (view.arrows) renderer.drawArrows(ctx, sim.core)
         if (now - lastStats > 200) {
           lastStats = now

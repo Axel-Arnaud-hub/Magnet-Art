@@ -57,8 +57,11 @@ export class FieldRenderer {
     this.octx.putImageData(this.img, 0, 0)
   }
 
-  draw(ctx, W, H, pad) {
-    const s = Math.min((W - 2 * pad) / this.nx, (H - 2 * pad) / this.ny)
+  // cover = true : le film remplit tout l'écran (les bords en trop sont rognés).
+  draw(ctx, W, H, cover) {
+    const s = cover
+      ? Math.max(W / this.nx, H / this.ny)
+      : Math.min((W * 0.88) / this.nx, (H * 0.88) / this.ny)
     this.lay = { s, x0: (W - this.nx * s) / 2, y0: (H - this.ny * s) / 2 }
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, W, H)
