@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PALETTES, CYCLIC_PALETTES, LINEAR_PALETTES } from '../sim/palettes.js'
 import { MATERIALS, INITIAL_STATES, SHAPES, PARAM_SPEC, presetParams } from '../sim/Simulation.js'
 
 const MATERIAL_KEYS = new Set(['Ms', 'A', 'K', 'D', 'alpha'])
@@ -21,6 +22,12 @@ function NumberField({ spec, value, onChange }) {
   )
 }
 
+// Aperçu CSS d'une palette.
+function gradient(id) {
+  const { stops, cyclic } = PALETTES[id]
+  return `linear-gradient(90deg, ${(cyclic ? [...stops, stops[0]] : stops).join(', ')})`
+}
+
 function Group({ title, children }) {
   return (
     <fieldset>
@@ -33,6 +40,11 @@ function Group({ title, children }) {
 export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid }) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
+
+  const wheel = view.mode === 'wheel'
+  const paletteKey = wheel ? 'wheelPalette' : 'linearPalette'
+  const paletteId = view[paletteKey]
+  const paletteIds = wheel ? CYCLIC_PALETTES : LINEAR_PALETTES
 
   const set = (key, value) =>
     setDraft((d) => ({ ...d, [key]: value, ...(MATERIAL_KEYS.has(key) ? { material: 'custom' } : {}) }))
@@ -102,7 +114,7 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
 
           <Group title="Affichage">
             <label className="row">
-              <span className="lbl">Couleur</span>
+              <span className="lbl">Voir</span>
               <select value={view.mode} onChange={(e) => setView({ ...view, mode: e.target.value })}>
                 <option value="wheel">Direction</option>
                 <option value="mz">mz</option>
@@ -110,6 +122,13 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
                 <option value="my">my</option>
               </select>
             </label>
+            <label className="row">
+              <span className="lbl">Palette</span>
+              <select value={paletteId} onChange={(e) => setView({ ...view, [paletteKey]: e.target.value })}>
+                {paletteIds.map((id) => <option key={id} value={id}>{PALETTES[id].label}</option>)}
+              </select>
+            </label>
+            <div className="swatch" style={{ background: gradient(paletteId) }} />
             <label className="row check">
               <input type="checkbox" checked={view.arrows} onChange={(e) => setView({ ...view, arrows: e.target.checked })} />
               <span>Flèches</span>

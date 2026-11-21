@@ -44,6 +44,7 @@ body,
   width: 260px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
+  overflow-x: hidden;
   background: rgba(0, 0, 0, 0.82);
   border: 1px solid var(--line);
   backdrop-filter: blur(6px);
@@ -198,6 +199,15 @@ button.primary.dirty {
   box-shadow: 0 0 0 1px #000, 0 0 0 2px #fff;
 }
 
+.swatch {
+  height: 4px;
+  margin: 2px 0 6px 58px;
+}
+
+.overlay {
+  background: transparent;
+}
+
 .hint {
   margin: 8px 0 0;
   color: var(--dim);
@@ -273,5 +283,9 @@ button.play {
 
   .actions button {
     padding: 12px;
+  }
+
+  .swatch {
+    margin-left: 74px;
   }
 }

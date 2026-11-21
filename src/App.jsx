@@ -14,7 +14,7 @@ export default function App() {
   const [applied, setApplied] = useState(DEFAULT_PARAMS)
   const [sim, setSim] = useState(() => makeSim(DEFAULT_PARAMS))
   const [running, setRunning] = useState(true)
-  const [view, setView] = useState({ mode: 'wheel', arrows: false })
+  const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false })
   const [speed, setSpeed] = useState(1)
   const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
 

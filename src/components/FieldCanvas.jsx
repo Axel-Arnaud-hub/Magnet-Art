@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { FieldRenderer } from '../sim/renderer.js'
+import { GLRenderer } from '../sim/glRenderer.js'
+import { CpuRenderer, ComponentScale, computeLayout, drawArrows, toCell } from '../sim/renderer.js'
 
-// Canvas plein écran : boucle d'animation, intégration LLG et rendu.
+// Plein écran : boucle d'animation, intégration LLG et rendu.
+// Canvas du dessous : champ (WebGL2, ou 2D en secours). Canvas du dessus : flèches.
 export default function FieldCanvas({ sim, running, view, speed, onStats }) {
-  const canvasRef = useRef(null)
+  const glRef = useRef(null)
+  const overlayRef = useRef(null)
   const live = useRef({ sim, running, view, speed, onStats })
 
   useEffect(() => {
@@ -11,25 +14,39 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
   }, [sim, running, view, speed, onStats])
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    const renderer = new FieldRenderer()
+    const glCanvas = glRef.current
+    const overlay = overlayRef.current
+    const octx = overlay.getContext('2d')
+    let gl = null
+    let cpu = null
+    try {
+      gl = new GLRenderer(glCanvas)
+    } catch (err) {
+      console.warn('Rendu WebGL2 indisponible, rendu 2D de secours :', err)
+      glCanvas.style.display = 'none'
+      cpu = new CpuRenderer(octx)
+    }
+    const scale = new ComponentScale()
     let W = 0
     let H = 0
+    let dpr = 1
+    let lay = null
     let raf = 0
     let last = performance.now()
     let lastStats = 0
 
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1
-      W = canvas.clientWidth
-      H = canvas.clientHeight
-      canvas.width = Math.round(W * dpr)
-      canvas.height = Math.round(H * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      dpr = window.devicePixelRatio || 1
+      W = overlay.clientWidth
+      H = overlay.clientHeight
+      for (const c of [glCanvas, overlay]) {
+        c.width = Math.round(W * dpr)
+        c.height = Math.round(H * dpr)
+      }
+      octx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
     const ro = new ResizeObserver(resize)
-    ro.observe(canvas)
+    ro.observe(overlay)
     resize()
 
     const frame = (now) => {
@@ -38,9 +55,17 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
       last = now
       if (sim) {
         if (running) sim.advance(dtReal, speed)
-        renderer.paint(sim.core, view.mode)
-        renderer.draw(ctx, W, H, sim.p.fill)
-        if (view.arrows) renderer.drawArrows(ctx, sim.core)
+        const core = sim.core
+        lay = computeLayout(core.nx, core.ny, W, H, sim.p.fill)
+        const palette = view.mode === 'wheel' ? view.wheelPalette : view.linearPalette
+        const opts = { mode: view.mode, palette, vmax: scale.update(core, view.mode) }
+        if (gl) {
+          gl.render(core, lay, dpr, opts)
+          octx.clearRect(0, 0, W, H)
+        } else {
+          cpu.render(core, lay, W, H, opts)
+        }
+        if (view.arrows) drawArrows(octx, core, lay)
         if (now - lastStats > 200) {
           lastStats = now
           onStats(sim.computeStats())
@@ -50,21 +75,26 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
     }
     raf = requestAnimationFrame(frame)
 
-    const onClick = (e) => {
+    const onPointer = (e) => {
       const { sim } = live.current
-      if (!sim) return
-      const rect = canvas.getBoundingClientRect()
-      const cell = renderer.toCell(e.clientX - rect.left, e.clientY - rect.top)
+      if (!sim || !lay) return
+      const rect = overlay.getBoundingClientRect()
+      const cell = toCell(lay, e.clientX - rect.left, e.clientY - rect.top)
       if (cell) sim.placeSeed(cell[0], cell[1])
     }
-    canvas.addEventListener('pointerdown', onClick)
+    overlay.addEventListener('pointerdown', onPointer)
 
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
-      canvas.removeEventListener('pointerdown', onClick)
+      overlay.removeEventListener('pointerdown', onPointer)
     }
   }, [])
 
-  return <canvas ref={canvasRef} className="field" />
+  return (
+    <>
+      <canvas ref={glRef} className="field" />
+      <canvas ref={overlayRef} className="field overlay" />
+    </>
+  )
 }

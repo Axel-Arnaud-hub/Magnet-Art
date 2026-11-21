@@ -120,6 +120,11 @@ export class Simulation {
       }
     }
     const c = new FilmCore(nx, ny, dx, { dy, mask, thickness: p.thick * 1e-9, demag: p.demag })
+    // Contour exact du disque, en unités de cellules (utilisé par le rendu).
+    if (mask) {
+      const r = 0.49 * Math.min(p.Lx, p.Ly)
+      c.disk = { rx: (r * nx) / p.Lx, ry: (r * ny) / p.Ly }
+    }
     c.Ms = p.Ms * 1e3
     c.A = p.A * 1e-12
     c.Kc = p.K * 1e3
