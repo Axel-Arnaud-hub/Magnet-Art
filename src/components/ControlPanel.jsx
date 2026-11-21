@@ -37,7 +37,7 @@ function Group({ title, children }) {
   )
 }
 
-export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid }) {
+export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid, tool, setTool }) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
 
@@ -112,6 +112,37 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
             {fields('seed')}
           </Group>
 
+          <Group title="Interaction">
+            <label className="row">
+              <span className="lbl">Toucher</span>
+              <select value={tool.kind} onChange={(e) => setTool({ ...tool, kind: e.target.value })}>
+                <option value="magnet">Aimant</option>
+                <option value="skyrmion">Graine de skyrmion</option>
+              </select>
+            </label>
+            {tool.kind === 'magnet' && (
+              <>
+                <label className="row">
+                  <span className="lbl">Force</span>
+                  <input type="number" min="0" max="5000" step="100" value={tool.strength} onChange={(e) => setTool({ ...tool, strength: e.target.value })} />
+                  <span className="unit">mT</span>
+                </label>
+                <label className="row">
+                  <span className="lbl">Hauteur</span>
+                  <input type="number" min="1" max="500" step="5" value={tool.height} onChange={(e) => setTool({ ...tool, height: e.target.value })} />
+                  <span className="unit">nm</span>
+                </label>
+                <label className="row">
+                  <span className="lbl">Pôle</span>
+                  <select value={tool.pole} onChange={(e) => setTool({ ...tool, pole: e.target.value })}>
+                    <option value="N">Nord (B ↓)</option>
+                    <option value="S">Sud (B ↑)</option>
+                  </select>
+                </label>
+              </>
+            )}
+          </Group>
+
           <Group title="Affichage">
             <label className="row">
               <span className="lbl">Voir</span>
@@ -146,7 +177,11 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
             </button>
             <button onClick={onToggle} title="Pause (Espace)">{running ? 'Pause' : 'Reprendre'}</button>
           </div>
-          <p className="hint">Toucher le film : injecter un skyrmion</p>
+          <p className="hint">
+            {tool.kind === 'magnet'
+              ? 'L’aimant suit la souris, ou le doigt posé sur l’écran'
+              : 'Toucher le film : injecter un skyrmion'}
+          </p>
         </div>
       )}
     </aside>

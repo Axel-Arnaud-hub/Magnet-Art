@@ -2,16 +2,38 @@ import { useEffect, useRef } from 'react'
 import { GLRenderer } from '../sim/glRenderer.js'
 import { CpuRenderer, ComponentScale, computeLayout, drawArrows, toCell } from '../sim/renderer.js'
 
+// Paramètres de l'aimant pour Simulation.setMagnet ; position en cellules
+// (sans borne : un aimant hors du film agit encore sur ses bords).
+function magnetAt(tool, p, lay) {
+  const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' ? Number(v) : d)
+  return {
+    cx: (p.x - lay.x0) / lay.s,
+    cy: lay.ny - (p.y - lay.y0) / lay.s,
+    strength: Math.min(Math.max(num(tool.strength, 0), 0), 5000),
+    height: Math.min(Math.max(num(tool.height, 30), 1), 500),
+    pole: tool.pole,
+  }
+}
+
+// Repère discret : cercle de rayon h (zone où le champ de l'aimant est fort).
+function drawMagnet(ctx, p, r) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.arc(p.x, p.y, Math.max(r, 6), 0, Math.PI * 2)
+  ctx.stroke()
+}
+
 // Plein écran : boucle d'animation, intégration LLG et rendu.
 // Canvas du dessous : champ (WebGL2, ou 2D en secours). Canvas du dessus : flèches.
-export default function FieldCanvas({ sim, running, view, speed, onStats }) {
+export default function FieldCanvas({ sim, running, view, speed, tool, onStats }) {
   const glRef = useRef(null)
   const overlayRef = useRef(null)
-  const live = useRef({ sim, running, view, speed, onStats })
+  const live = useRef({ sim, running, view, speed, tool, onStats })
 
   useEffect(() => {
-    live.current = { sim, running, view, speed, onStats }
-  }, [sim, running, view, speed, onStats])
+    live.current = { sim, running, view, speed, tool, onStats }
+  }, [sim, running, view, speed, tool, onStats])
 
   useEffect(() => {
     const glCanvas = glRef.current
@@ -34,6 +56,8 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
     let raf = 0
     let last = performance.now()
     let lastStats = 0
+    // Position du pointeur (px CSS) quand l'aimant est actif, sinon null.
+    let pointer = null
 
     const resize = () => {
       dpr = window.devicePixelRatio || 1
@@ -50,13 +74,15 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
     resize()
 
     const frame = (now) => {
-      const { sim, running, view, speed, onStats } = live.current
+      const { sim, running, view, speed, tool, onStats } = live.current
       const dtReal = Math.min(0.05, (now - last) / 1000)
       last = now
       if (sim) {
-        if (running) sim.advance(dtReal, speed)
         const core = sim.core
         lay = computeLayout(core.nx, core.ny, W, H, sim.p.fill)
+        const magnet = tool.kind === 'magnet' && pointer ? magnetAt(tool, pointer, lay) : null
+        sim.setMagnet(magnet)
+        if (running) sim.advance(dtReal, speed)
         const palette = view.mode === 'wheel' ? view.wheelPalette : view.linearPalette
         const opts = { mode: view.mode, palette, vmax: scale.update(core, view.mode) }
         if (gl) {
@@ -66,6 +92,7 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
           cpu.render(core, lay, W, H, opts)
         }
         if (view.arrows) drawArrows(octx, core, lay)
+        if (magnet) drawMagnet(octx, pointer, (magnet.height * 1e-9 * lay.s) / core.dx)
         if (now - lastStats > 200) {
           lastStats = now
           onStats(sim.computeStats())
@@ -75,19 +102,46 @@ export default function FieldCanvas({ sim, running, view, speed, onStats }) {
     }
     raf = requestAnimationFrame(frame)
 
-    const onPointer = (e) => {
-      const { sim } = live.current
-      if (!sim || !lay) return
+    const pos = (e) => {
       const rect = overlay.getBoundingClientRect()
-      const cell = toCell(lay, e.clientX - rect.left, e.clientY - rect.top)
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    }
+    // Souris : l'aimant suit le curseur sans clic. Doigt / stylet : tant qu'il touche l'écran.
+    const onDown = (e) => {
+      const { sim, tool } = live.current
+      if (!sim || !lay) return
+      if (tool.kind === 'magnet') {
+        pointer = pos(e)
+        if (e.pointerType !== 'mouse') overlay.setPointerCapture(e.pointerId)
+        return
+      }
+      const p = pos(e)
+      const cell = toCell(lay, p.x, p.y)
       if (cell) sim.placeSeed(cell[0], cell[1])
     }
-    overlay.addEventListener('pointerdown', onPointer)
+    const onMove = (e) => {
+      if (e.pointerType === 'mouse' || pointer) pointer = pos(e)
+    }
+    const onUp = (e) => {
+      if (e.pointerType !== 'mouse') pointer = null
+    }
+    const onLeave = () => {
+      pointer = null
+    }
+    overlay.addEventListener('pointerdown', onDown)
+    overlay.addEventListener('pointermove', onMove)
+    overlay.addEventListener('pointerup', onUp)
+    overlay.addEventListener('pointercancel', onLeave)
+    overlay.addEventListener('pointerleave', onLeave)
 
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
-      overlay.removeEventListener('pointerdown', onPointer)
+      overlay.removeEventListener('pointerdown', onDown)
+      overlay.removeEventListener('pointermove', onMove)
+      overlay.removeEventListener('pointerup', onUp)
+      overlay.removeEventListener('pointercancel', onLeave)
+      overlay.removeEventListener('pointerleave', onLeave)
     }
   }, [])
 

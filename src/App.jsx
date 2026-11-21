@@ -16,6 +16,8 @@ export default function App() {
   const [running, setRunning] = useState(true)
   const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false })
   const [speed, setSpeed] = useState(1)
+  // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
+  const [tool, setTool] = useState({ kind: 'magnet', strength: 2500, height: 30, pole: 'N' })
   const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
 
   const dirty = draft !== applied
@@ -46,7 +48,7 @@ export default function App() {
 
   return (
     <>
-      <FieldCanvas sim={sim} running={running} view={view} speed={speed} onStats={setStats} />
+      <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} onStats={setStats} />
       <ControlPanel
         draft={draft}
         setDraft={setDraft}
@@ -59,6 +61,8 @@ export default function App() {
         speed={speed}
         setSpeed={setSpeed}
         stats={stats}
+        tool={tool}
+        setTool={setTool}
         grid={[sim.p.nx, sim.p.ny, sim.p.Lx, sim.p.Ly]}
       />
     </>

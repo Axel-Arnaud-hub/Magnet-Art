@@ -192,6 +192,43 @@ export class Simulation {
     c.invalidate()
   }
 
+  // Aimant virtuel : dipôle ponctuel vertical placé à la hauteur h au-dessus
+  // du point (cx, cy) (en cellules). `strength` = |B| sous l'aimant (mT).
+  // pole 'N' : pôle nord face au film, le champ sous l'aimant pointe vers −z.
+  // null : retire l'aimant.
+  setMagnet(m) {
+    const c = this.core
+    if (!m || !(m.strength > 0)) {
+      c.localOn = false
+      return
+    }
+    // Le pas de temps stable dépend du champ maximal : on le recalcule si besoin.
+    const bound = m.strength * 1e-3
+    if (bound > c.extraFieldBound * 1.001 || bound < c.extraFieldBound * 0.5) {
+      c.extraFieldBound = bound
+      c.prepare()
+    }
+    const { nx, ny } = this
+    const h = Math.max(m.height, 1) * 1e-9
+    const amp = m.strength * 1e-3 * 0.5 * h * h * h * (m.pole === 'S' ? 1 : -1)
+    const h2 = h * h
+    for (let j = 0; j < ny; j++) {
+      const y = (j + 0.5 - m.cy) * c.dy
+      for (let i = 0; i < nx; i++) {
+        const id = j * nx + i
+        const x = (i + 0.5 - m.cx) * c.dx
+        const r2 = x * x + y * y + h2
+        const ir3 = 1 / (r2 * Math.sqrt(r2))
+        const ir5 = ir3 / r2
+        // B = amp · (3 (ẑ·r) r / r⁵ − ẑ / r³), avec r = (x, y, −h)
+        c.lbx[id] = amp * -3 * h * x * ir5
+        c.lby[id] = amp * -3 * h * y * ir5
+        c.lbz[id] = amp * (3 * h2 * ir5 - ir3)
+      }
+    }
+    c.localOn = true
+  }
+
   // Avance la simulation d'un intervalle réel `dtReal` (s), budget CPU ~11 ms.
   advance(dtReal, speed) {
     const c = this.core

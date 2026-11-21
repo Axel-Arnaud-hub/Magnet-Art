@@ -32,6 +32,9 @@ export class FilmCore {
     // Le terme d’énergie est K_i (1 - m_z²).
     this.Kmap = null;
     this.extraFieldBound = 0;
+    // Champ local (T) par cellule, ex. aimant virtuel ; null = inactif.
+    this.localOn = false;
+    this.lbx = new Float64Array(n); this.lby = new Float64Array(n); this.lbz = new Float64Array(n);
     this.Bx = 0; this.By = 0; this.Bz = 0;
     this.beta = 0; this.ux = 0; this.uy = 0;
     this.acS = null; this.acAmp = 0; this.acOmega = 0; this.acPhi = 0;
@@ -171,6 +174,7 @@ export class FilmCore {
     if (useAc) acv = this.acAmp * Math.sin(this.acOmega * t + this.acPhi);
     const acS = this.acS, adx = this.acDx, ady = this.acDy, adz = this.acDz;
     const dm = this.demagOn, hx = this.hdx, hy = this.hdy, hz = this.hdz;
+    const lf = this.localOn, lbx = this.lbx, lby = this.lby, lbz = this.lbz;
     for (let q = 0; q < na; q++) {
       const i = act[q], l = L[i], r = R[i], u = U[i], d = Dn[i];
       const x = ax[i], y = ay[i], z = az[i];
@@ -204,6 +208,7 @@ export class FilmCore {
         Bx += s * adx; By += s * ady; Bz += s * adz;
       }
       if (dm) { Bx += hx[i]; By += hy[i]; Bz += hz[i]; }
+      if (lf) { Bx += lbx[i]; By += lby[i]; Bz += lbz[i]; }
       const a = al[i], g = GAMMA / (1 + a * a);
       const cx = y * Bz - z * By, cy = z * Bx - x * Bz, cz = x * By - y * Bx;
       let tx = -g * (cx + a * (y * cz - z * cy));
