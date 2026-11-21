@@ -39,11 +39,10 @@ export const SCALES = {
 //  octave : transposition de la couche ; voice : oscillateurs de chaque voix
 //  (forme, rapport de fréquence, sens du désaccord, niveau) ; chord : degrés
 //  de l'accord ; progression : suite d'accords ; mode(f) : gamme en « auto » ;
-//  rotation : circulation des voix dans l'espace ; bell : cloche quand Q change.
+//  rotation : circulation des voix dans l'espace.
 export const PROFILES = {
   // Le trou : un skyrmion est un creux dans l'aimantation. Grave et sourd
-  // (sinus, octave basse, filtre fermé, sous-basse permanente). Les skyrmions
-  // qui naissent ou meurent font des « gouttes » étouffées.
+  // (sinus, octave basse, filtre fermé, sous-basse permanente).
   skyrmion: {
     octave: -1,
     voice: [
@@ -62,7 +61,6 @@ export const PROFILES = {
     delay: { time: 0.45, fb: 0.3, send: 0.12 },
     reverb: 0.7,
     sub: 0.14,
-    bell: { stable: 1, gap: 6, ratio: 2, decay: 3, octave: 1, muffled: true },
   },
   // Le dédale : dents de scie et carré grave, modes sombres, filtre résonant
   // qui pulse, souffle granuleux qui suit les parois, échos denses.
@@ -84,7 +82,6 @@ export const PROFILES = {
     delay: { time: 0.62, fb: 0.5, send: 0.3 },
     reverb: 0.6,
     sub: 0,
-    bell: { stable: 2.5, gap: 15, ratio: 1.41, decay: 6, octave: 0 },
   },
   // Le tourbillon : orgue doux (quinte ajoutée), accords en quartes. Les voix
   // tournent autour de l'auditeur, chacune décalée en phase (panoramique,
@@ -109,15 +106,15 @@ export const PROFILES = {
     delay: { time: 0.5, fb: 0.45, send: 0.25 },
     reverb: 0.8,
     sub: 0,
-    bell: { stable: 1.5, gap: 8, ratio: 2, decay: 5, octave: 1 },
   },
 }
 
 const ROOT = 50 // ré, tonique commune à toutes les couches
 const VOICES = 5
-const WARMUP = 3 // s sans pic ni cloche au démarrage
+const WARMUP = 3 // s sans pic au démarrage
 const FALLBACK = 45 // s : sans aucun pic, l'accord avance quand même
-const Q_HYST = 0.75 // écart de Q (stable) qui fait sonner la cloche
+const Q_HYST = 0.75 // écart de Q qui compte comme un vrai changement de topologie
+const Q_HOLD = 1.5 // s pendant lesquelles ce nouvel écart doit tenir
 const MOD_GAP = 30 // s minimum entre deux modulations
 const DOM_HOLD = 2 // s : un nouvel archétype dominant qui tient fait tourner l'harmonie
 // Dispositions des voix (octaves ajoutées), variées sur les pics moyens.
@@ -306,7 +303,6 @@ export class AmbientEngine {
     this.detune = 4
     this.qShown = null
     this.qSince = 0
-    this.lastBell = -Infinity
     this.lastMod = -Infinity
     this.peaks = new PeakDetector()
     this.started = null
@@ -318,8 +314,8 @@ export class AmbientEngine {
     this.applyChord(true)
   }
 
-  // Simulation relancée (monde choisi, « Relancer ») : pas de cloche pour le
-  // saut de Q, nouvelle statistique des pics, harmonie reprise de l'état mesuré.
+  // Simulation relancée (monde choisi, « Relancer ») : on oublie l'ancien Q,
+  // nouvelle statistique des pics, harmonie reprise de l'état mesuré.
   reset(t) {
     this.qShown = null
     this.qSince = 0
@@ -430,43 +426,6 @@ export class AmbientEngine {
     this.filter.detune.setTargetAtTime(0, t + 0.05, 0.8)
   }
 
-  // Cloche FM courte, avec le timbre de l'archétype dominant.
-  bell(up) {
-    const P = PROFILES[dominant(this.w)]
-    const B = P.bell
-    const ctx = this.ctx
-    const t = ctx.currentTime
-    if (t - this.lastBell < B.gap) return
-    this.lastBell = t
-    const deg = this.progression[this.chordIdx % this.progression.length] + P.chord[Math.floor(Math.random() * 3)]
-    const f = midiHz(noteOf(ROOT + this.key + this.poleShift, this.steps(), deg, B.octave + (up ? 1 : 0)))
-    const car = ctx.createOscillator()
-    const mod = ctx.createOscillator()
-    const modAmt = ctx.createGain()
-    const env = ctx.createGain()
-    car.frequency.value = f
-    mod.frequency.value = f * B.ratio
-    modAmt.gain.setValueAtTime(f * 2, t)
-    modAmt.gain.exponentialRampToValueAtTime(1, t + B.decay * 0.6)
-    env.gain.setValueAtTime(0, t)
-    env.gain.linearRampToValueAtTime(0.12, t + 0.01)
-    env.gain.exponentialRampToValueAtTime(0.0001, t + B.decay)
-    mod.connect(modAmt).connect(car.frequency)
-    car.connect(env)
-    if (B.muffled) {
-      // Étouffée : passe par le filtre fermé de la nappe.
-      env.connect(this.filter)
-    } else {
-      env.connect(this.reverb)
-      env.connect(this.delaySend)
-      env.connect(this.pan)
-    }
-    car.start(t)
-    mod.start(t)
-    car.stop(t + B.decay + 0.1)
-    mod.stop(t + B.decay + 0.1)
-  }
-
   update(f) {
     if (!this.running) return
     const t = this.ctx.currentTime
@@ -531,13 +490,11 @@ export class AmbientEngine {
     }
     if (Math.abs(circ) > 0.2 && Math.sign(circ) !== this.rotDir) this.setRotationDir(Math.sign(circ))
 
-    // --- Cloche : Q s'écarte franchement de sa dernière valeur et y reste ---
-    const B = PROFILES[dominant(w)].bell
+    // --- Q retenu (nombre de skyrmions) : ne change que si l'écart tient ---
     if (this.qShown === null) this.qShown = f.Q
     if (Math.abs(f.Q - this.qShown) > Q_HYST) {
       if (!this.qSince) this.qSince = t
-      if (t - this.qSince > B.stable) {
-        if (t - this.started > WARMUP) this.bell(Math.abs(f.Q) > Math.abs(this.qShown))
+      if (t - this.qSince > Q_HOLD) {
         this.qShown = f.Q
         this.qSince = 0
       }

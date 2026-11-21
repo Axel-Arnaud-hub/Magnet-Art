@@ -22,7 +22,7 @@ export default function Sandbox() {
   const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: WORLDS[DEFAULT_WORLD].arrows })
   const [speed, setSpeed] = useState(1)
   // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
-  const [tool, setTool] = useState({ kind: 'magnet', strength: 2500, height: 30, pole: 'N' })
+  const [tool, setTool] = useState({ kind: 'skyrmion', strength: 2500, height: 30, pole: 'N' })
   const [stats, setStats] = useState({ t: 0, mz: 1, Q: 0 })
   // Son : le moteur est créé au premier clic (les navigateurs l'exigent).
   const engine = useRef(null)

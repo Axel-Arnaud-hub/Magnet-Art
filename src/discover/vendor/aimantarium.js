@@ -1,11 +1,10 @@
 /* eslint-disable */
-// Code de simulation du prototype Aimantarium (version accompagnée V12),
-// repris tel quel : fichiers js/noyau, js/vue, js/modes et js/catalogue
-// concaténés dans un module. Ne pas modifier ici sans raison : c'est la
-// référence physique des parcours de découverte.
-// Bouchons pour ce qui n'est pas repris (capteurs, son, code Ubermag) :
+// Code du prototype Aimantarium V19 (« À toi d'expérimenter »), repris tel
+// quel : fichiers js/noyau, js/vue, js/modes et js/catalogue concaténés
+// dans un module. Ne pas modifier ici sans raison : c'est la référence
+// physique et le contenu des parcours et des applications.
+// Bouchons pour ce qui n'est pas repris (capteurs, code Ubermag) :
 const Sensors = { real: false, heading: null, start: () => Promise.resolve(), label: () => '' };
-const Snd = { on: false };
 const UB_HEAD = '';
 const UB = { links: {}, map: {}, cells: {}, code: {}, notes: {} };
 
@@ -1128,6 +1127,110 @@ class Engine {
     return s;
   }
 }
+
+// ===== noyau/sound.js =====
+const Snd = {
+  on: false, ctx: null, master: null, clickBuf: null, hum: null, clickBudget: 0,
+
+  ensure: function () {
+    if (this.ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try {
+      this.ctx = new AC();
+    } catch (e) {
+      return false;
+    }
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.55;
+    this.master.connect(this.ctx.destination);
+    const n = Math.floor(this.ctx.sampleRate * 0.035), b = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.18));
+    this.clickBuf = b;
+    return true;
+  },
+
+  setOn: function (v) {
+    this.on = !!v;
+    if (this.on) {
+      if (this.ensure() && this.ctx.state === 'suspended') this.ctx.resume();
+    } else {
+      this.stopHum();
+    }
+  },
+
+  tick: function () { this.clickBudget = 7; },
+
+  click: function (a) {
+    if (!this.on || !this.ensure() || this.clickBudget <= 0) return;
+    this.clickBudget--;
+    const c = this.ctx, src = c.createBufferSource(), g = c.createGain();
+    src.buffer = this.clickBuf;
+    src.playbackRate.value = 0.6 + Math.random() * 0.9;
+    g.gain.value = clamp(a, 0, 1) * 0.9;
+    src.connect(g);
+    g.connect(this.master);
+    src.start(c.currentTime + Math.random() * 0.03);
+  },
+
+  tone: function (f, dur, vol, type, delay) {
+    if (!this.on || !this.ensure()) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain(), t = c.currentTime + (delay || 0);
+    o.type = type || 'sine';
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g);
+    g.connect(this.master);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  },
+
+  ding: function () {
+    this.tone(784, 0.35, 0.18, 'triangle');
+    this.tone(1175, 0.5, 0.14, 'triangle', 0.09);
+  },
+
+  flip: function () {
+    this.tone(523, 0.12, 0.16, 'square');
+    this.tone(784, 0.18, 0.12, 'square', 0.07);
+  },
+
+  setHum: function (f, a) {
+    if (!this.on || !this.ensure()) return;
+    const c = this.ctx, t = c.currentTime;
+    if (!this.hum) {
+      const o = c.createOscillator(), g = c.createGain(), lp = c.createBiquadFilter();
+      o.type = 'triangle';
+      o.frequency.value = Math.max(40, f);
+      lp.type = 'lowpass';
+      lp.frequency.value = 2200;
+      g.gain.value = 0;
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(this.master);
+      o.start();
+      this.hum = { o: o, g: g };
+    }
+    this.hum.o.frequency.setTargetAtTime(clamp(f, 40, 2400), t, 0.05);
+    this.hum.g.gain.setTargetAtTime(clamp(a, 0, 1) * 0.22, t, 0.06);
+  },
+
+  stopHum: function () {
+    if (!this.hum || !this.ctx) { this.hum = null; return; }
+    const h = this.hum, t = this.ctx.currentTime;
+    h.g.gain.setTargetAtTime(0, t, 0.04);
+    try { h.o.stop(t + 0.3); } catch (e) {}
+    this.hum = null;
+  },
+
+  buzz: function (ms) {
+    if (navigator.vibrate) {
+      try { navigator.vibrate(ms); } catch (e) {}
+    }
+  }
+};
 
 // ===== vue/viz.js =====
 class Plot {
@@ -2649,7 +2752,7 @@ class WallSim extends FilmSimBase {
     if (this.wallW < 1.2 * this.dx) out.push(['Alerte', 'paroi trop fine pour la grille', 'bad']);
     return out;
   }
-  draw(ctx, W, H) {
+  draw(ctx, W, H, guided = false) {
     const c = this.core, nx = this.nx, pad = 22, w = W - 2 * pad, cw = w / nx;
     const yR = H * 0.13, hR = H * 0.17;
     for (let i = 0; i < nx; i++) {
@@ -2662,10 +2765,14 @@ class WallSim extends FilmSimBase {
     ctx.fillStyle = PAL.ink2;
     ctx.font = '12px Atkinson Hyperlegible, system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(W < 560 ? 'vue de dessus : rouge ↑, bleu ↓, blanc = paroi' : 'vue de dessus : rouge = aimantation vers le haut ↑, bleu = vers le bas ↓, blanc = la paroi', pad, yR - 8);
+    const topView = W < 560 ? 'vue de dessus : rouge ↑, bleu ↓, blanc = paroi' :
+      'vue de dessus : rouge = aimantation vers le haut ↑, bleu = vers le bas ↓, blanc = la paroi';
+    ctx.fillText(guided ? 'Vue de dessus · les couleurs' : topView, pad, guided ? Math.max(13, yR - 8) : yR - 8);
     const cy = H * 0.66, st = 4, L = cw * st * 0.46;
     ctx.fillStyle = PAL.ink2;
-    ctx.fillText(W < 560 ? 'vue de côté : une flèche par groupe de spins' : 'vue de côté : chaque flèche montre l’aimantation locale (rouge ↑, bleu ↓, sombre = couchée)', pad, cy - H * 0.2);
+    const sideView = W < 560 ? 'vue de côté : une flèche par groupe de spins' :
+      'vue de côté : chaque flèche montre l’aimantation locale (rouge ↑, bleu ↓, sombre = couchée)';
+    ctx.fillText(guided ? 'Vue de côté · le sens des petits aimants' : sideView, pad, cy - H * 0.2);
     ctx.lineWidth = 2.2;
     for (let i = 2; i < nx; i += st) {
       const cx = pad + (i + 0.5) * cw, ax = c.mx[i] * L, ay = -c.mz[i] * L;
@@ -3619,10 +3726,10 @@ class FilingsSim extends SimBase {
       }
     }
   }
-  drawLines(ctx, a) {
+  drawLines(ctx, a, color = '23,20,15') {
     const L = this.lines || [];
-    ctx.strokeStyle = 'rgba(23,20,15,' + a + ')';
-    ctx.fillStyle = 'rgba(23,20,15,' + Math.min(1, a + 0.15) + ')';
+    ctx.strokeStyle = 'rgba(' + color + ',' + a + ')';
+    ctx.fillStyle = 'rgba(' + color + ',' + Math.min(1, a + 0.15) + ')';
     ctx.lineWidth = 1.3;
     for (let i = 0; i < L.length; i++) {
       const p = L[i];
@@ -4135,7 +4242,7 @@ class CurieSim extends SimBase {
     else if (id === 'quench') { this.anneal = null; this.init('random'); this.p.T = 1.2; this.host.setParamUI('T', 1.2); }
     else if (id === 'reset') { this.bins.fill(0); this.binN.fill(0); this.init('up'); }
   }
-  draw(ctx, W, H) {
+  draw(ctx, W, H, guided = false) {
     const s = this.s, u = this.u32, cu = this.cUp, cd = this.cDn;
     for (let i = 0; i < this.n; i++) u[i] = s[i] > 0 ? cu : cd;
     this.cx.putImageData(this.img, 0, 0);
@@ -4146,11 +4253,11 @@ class CurieSim extends SimBase {
     ctx.strokeStyle = PAL.ink;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x0 - 0.5, y0 - 0.5, side + 1, side + 1);
-    this.drawThermo(ctx, x0 + side + 46, y0 + 6, side - 40);
+    this.drawThermo(ctx, x0 + side + 46, y0 + 6, side - 40, guided);
     if (this.extraT > 0.15) drawLabel(ctx, 'Secousse = chaleur ! +' + frNum(this.extraT, 1), x0 + 10, y0 + 26, { col: '#fff', bg: PAL.red, bd: PAL.red });
     if (this.anneal) drawLabel(ctx, 'Refroidissement lent…', x0 + 10, y0 + side - 12);
   }
-  drawThermo(ctx, x, y, h) {
+  drawThermo(ctx, x, y, h, guided) {
     const T = this.Teff(), f = clamp(T / 5, 0, 1), w = 18;
     ctx.fillStyle = PAL.card;
     roundRect(ctx, x - w / 2, y, w, h, 9);
@@ -4159,9 +4266,9 @@ class CurieSim extends SimBase {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     const g = ctx.createLinearGradient(0, y + h, 0, y);
-    g.addColorStop(0, PAL.blue);
-    g.addColorStop(0.5, '#8E4A8C');
-    g.addColorStop(1, PAL.red);
+    g.addColorStop(0, guided ? '#a6c4a1' : PAL.blue);
+    g.addColorStop(0.5, guided ? '#488678' : '#8E4A8C');
+    g.addColorStop(1, guided ? '#193437' : PAL.red);
     ctx.fillStyle = g;
     const fh = Math.max(4, f * (h - 6));
     roundRect(ctx, x - w / 2 + 3, y + h - 3 - fh, w - 6, fh, 5);
@@ -4173,10 +4280,10 @@ class CurieSim extends SimBase {
     ctx.fillStyle = PAL.ink;
     ctx.font = fnt(11, 800);
     ctx.textAlign = 'right';
-    ctx.fillText('T_C', x - w / 2 - 10, yc + 4);
+    ctx.fillText(guided ? 'Curie' : 'T_C', x - w / 2 - 10, yc + 4);
     ctx.textAlign = 'center';
     ctx.font = fnt(12, 700);
-    ctx.fillText(frNum(this.celsius(T), 0) + ' °C', x, y + h + 18);
+    ctx.fillText(guided ? frNum(T, 1) : frNum(this.celsius(T), 0) + ' °C', x, y + h + 18);
     ctx.font = fnt(10, 400);
     ctx.fillStyle = PAL.ink3;
     ctx.fillText('chaud', x, y - 6);
@@ -5003,8 +5110,8 @@ class PinningSim extends EngineSim {
     return { prec: true, gamma0: GAMMA0, alpha: p.alpha, edge: 0, zl: p.u ? { ux: p.u, uy: 0, beta: p.alpha } : null, sl: null };
   }
 
-  resetWall() {
-    const e = this.eng, g = PIN_MAT, x0 = 64e-9, dl = Math.sqrt(g.A / this.keff()), s = this.p.D >= 0 ? -1 : 1;
+  resetWall(x0 = 64e-9) {
+    const e = this.eng, g = PIN_MAT, dl = Math.sqrt(g.A / this.keff()), s = this.p.D >= 0 ? -1 : 1;
     for (let j = 0; j < g.ny; j++) {
       for (let i = 0; i < g.nx; i++) {
         const id = j * g.nx + i, x = (i + 0.5) * g.c, th = 2 * Math.atan(Math.exp((x - x0) / dl));
@@ -5416,6 +5523,303 @@ class LabySim extends EngineSim {
   }
 }
 
+// ===== modes/sandbox.js =====
+const MATS = {
+  py: { name: 'Permalloy Ni₈₀Fe₂₀, vortex (Shinjo et al. 2000)', Ms: 800, A: 13, Ktype: 'uni', K: 0, Kaxis: 'z', Dtype: 'Cnv_z', D: 0, alpha: 0.15, Tc: 0, demag: true, geo: { shape: 'disk', Lx: 400, Ly: 400, tz: 40, cell: 5, bc: 'open', init: 'vortex', drv: 'relax', Bx: 0, By: 0, Bz: 0, disp: 'wheel' } },
+  copt: { name: 'Co/Pt, skyrmion (Sampaio et al. 2013)', Ms: 580, A: 15, Ktype: 'uni', K: 800, Kaxis: 'z', Dtype: 'Cnv_z', D: 3, alpha: 0.3, Tc: 0, demag: true, geo: { shape: 'disk', Lx: 160, Ly: 160, tz: 1, cell: 2.5, bc: 'open', init: 'sky', drv: 'relax', Bx: 0, By: 0, Bz: 0, disp: 'mz' } },
+  ircopt: { name: 'Ir/Co/Pt : textures de domaines, inspiré de Moreau-Luchaire 2016', Ms: 956, A: 10, Ktype: 'uni', K: 717, Kaxis: 'z', Dtype: 'Cnv_z', D: 1.9, alpha: 0.3, Tc: 0, demag: true, geo: { shape: 'rect', Lx: 256, Ly: 256, tz: 1, cell: 4, bc: 'pbc', init: 'maze', drv: 'relax', Bx: 0, By: 0, Bz: 0, disp: 'mz' } }
+};
+
+const SB_GEO = ['shape', 'Lx', 'Ly', 'tz', 'cell', 'bc'];
+const SB_MATP = ['Ms', 'A', 'Ktype', 'K', 'Kaxis', 'Dtype', 'D', 'alpha', 'Tc', 'demag'];
+const SB_TERM = ['Ms', 'A', 'Ktype', 'K', 'Kaxis', 'Dtype', 'D', 'alpha', 'Tc', 'T', 'demag', 'Bx', 'By', 'Bz', 'fun', 'bx', 'by', 'bz', 'f', 't0', 'tw'];
+const TERM_FR = { exchange: 'Échange', dmi: 'DMI', uniaxial: 'Anisotropie', cubic: 'Anis. cubique', zeeman: 'Zeeman', demag: 'Démag' };
+
+class SandboxSim extends EngineSim {
+  constructor(host, d) {
+    const k = MATS[d.mat] ? d.mat : 'copt';
+    super(host, Object.assign({}, MATS[k], MATS[k].geo, d, { mat: k, T: 0, Tc: 0, drv: 'relax' }));
+    this.timeScale = 1e-9;
+    this.budget = 5;
+    this.dirtyGeo = false;
+    this.dirtyTerms = false;
+    this.tooBig = false;
+    this.seed = 1;
+    this.rebuild();
+  }
+
+  axis() { return this.p.Kaxis === 'x' ? [1, 0, 0] : (this.p.Kaxis === 'y' ? [0, 1, 0] : [0, 0, 1]); }
+
+  grid() {
+    const p = this.p, c = p.cell * 1e-9;
+    return { c: c, nx: Math.max(1, Math.round(p.Lx / p.cell)), ny: Math.max(1, Math.round(p.Ly / p.cell)), dz: p.tz * 1e-9, px: p.bc === 'pbc', py: p.bc === 'pbc' };
+  }
+
+  makeMask(g) {
+    const sh = this.p.bc === 'pbc' ? 'rect' : this.p.shape;
+    if (sh === 'rect') return null;
+    const m = new Uint8Array(g.nx * g.ny), ax = g.nx / 2, ay = g.ny / 2;
+    for (let j = 0; j < g.ny; j++) {
+      for (let i = 0; i < g.nx; i++) {
+        const u = (i + 0.5 - ax) / ax, v = (j + 0.5 - ay) / ay, r2 = u * u + v * v;
+        let k = 1;
+        if (sh === 'disk') k = r2 <= 1 ? 1 : 0;
+        else if (sh === 'ring') k = r2 <= 1 && r2 >= 0.2 ? 1 : 0;
+        else if (sh === 'notch') {
+          const depth = 0.5 - Math.abs(u) * ax / ay * 0.5;
+          k = depth > 0 && (v < -1 + depth || v > 1 - depth) ? 0 : 1;
+        }
+        m[j * g.nx + i] = k;
+      }
+    }
+    return m;
+  }
+
+  terms() {
+    const p = this.p;
+    const t = [{ kind: 'exchange', A: p.A * 1e-12 }];
+    if (p.D) t.push({ kind: 'dmi', D: p.D * 1e-3, cls: 'Cnv_z' });
+    if (p.K) t.push({ kind: 'uniaxial', K: p.K * 1e3, u: [0, 0, 1] });
+    if (p.demag) t.push({ kind: 'demag' });
+    this.zs = { kind: 'zeeman', H: [0, 0, p.Bz * 1e-3 / MU0], func: 'none', name: 'Hdc' };
+    t.push(this.zs);
+    this.zd = null;
+    return t;
+  }
+
+  dyn() { return { prec: true, gamma0: GAMMA0, alpha: this.p.alpha, edge: 0, zl: null, sl: null }; }
+
+  rebuild() {
+    const g = this.grid(), p = this.p;
+    this.dirtyGeo = false;
+    this.dirtyTerms = false;
+    this.tooBig = g.nx * g.ny > 16384;
+    this.gridNow = g;
+    if (this.tooBig) {
+      this.host.toast('Trop de cellules (' + frNum(g.nx * g.ny, 0) + '). Grossis la cellule ou réduis la taille.');
+      if (this.eng) return;
+      g.nx = Math.min(g.nx, 128); g.ny = Math.min(g.ny, 128);
+    }
+    this.Tc = 0;
+    g.Ms = p.Ms * 1e3;
+    g.mask = this.makeMask(g);
+    this.build(g, this.terms(), this.dyn(), 0);
+    this.relaxMode = true;
+    this.initState();
+  }
+
+  retune() {
+    const e = this.eng, p = this.p;
+    this.dirtyTerms = false;
+    if (!e) return;
+    e.Ms = p.Ms * 1e3;
+    e.Tc = 0;
+    this.Tc = 0;
+    e.setup(this.terms(), this.dyn(), 0);
+  }
+
+  initState() {
+    const e = this.eng, p = this.p, nx = e.nx, ny = e.ny, c = e.c, cx = nx * c / 2, cy = ny * c / 2;
+    const r = uni(xorshift(this.seed++)), A = p.A * 1e-12, D = Math.abs(p.D * 1e-3);
+    const lam = D > 0 ? 4 * Math.PI * A / D : 50e-9, R = Math.min(nx, ny) * c / 6, w = Math.max(2 * c, R / 3);
+    const sD = p.D >= 0 ? 1 : -1, bulk = p.Dtype === 'T';
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const id = j * nx + i, x = (i + 0.5) * c - cx, y = (j + 0.5) * c - cy, rr = Math.sqrt(x * x + y * y);
+        let a = 0, b = 0, z = 1;
+        if (p.init === 'ux') { a = 1; z = 0; }
+        else if (p.init === 'rand') { z = 2 * r() - 1; const ph = TAU * r(), s = Math.sqrt(1 - z * z); a = s * Math.cos(ph); b = s * Math.sin(ph); }
+        else if (p.init === 'vortex') {
+          const core = Math.max(2 * c, 8e-9), pz = Math.exp(-rr * rr / (core * core)), s = Math.sqrt(1 - pz * pz);
+          z = pz; if (rr > 0) { a = -y / rr * s; b = x / rr * s; }
+        } else if (p.init === 'sky') {
+          const th = 2 * Math.atan2(Math.sinh(R / w), Math.sinh(rr / w)), ph = Math.atan2(y, x) + (bulk ? Math.PI / 2 : 0) + (sD < 0 ? Math.PI : 0);
+          a = Math.sin(th) * Math.cos(ph); b = Math.sin(th) * Math.sin(ph); z = Math.cos(th);
+        } else if (p.init === 'stripes') { const q = TAU * x / lam; z = Math.cos(q); a = bulk ? 0 : Math.sin(q); b = bulk ? Math.sin(q) : 0; }
+        else if (p.init === 'maze') {
+          // Condition initiale en domaines courbes, analytique et reproductible.
+          // Les courbes de niveau sont choisies pour donner une structure riche,
+          // puis la dynamique réduit l'énergie du modèle micromagnétique.
+          const q1 = TAU / 96e-9, q2 = TAU / 135e-9;
+          const q3 = TAU / 90e-9, q4 = TAU / 140e-9, q5 = TAU / 170e-9;
+          const v = q2*y + 0.9 * Math.sin(q4*x);
+          const u = q1*x + 1.75 * Math.sin(v);
+          const v2 = q3*y + 1.2 * Math.sin(q4*x);
+          const w2 = q5*(x-y), cv = Math.cos(v), c4 = Math.cos(q4*x);
+          const f = Math.sin(u) + 0.53*Math.cos(v2) + 0.4*Math.sin(w2);
+          const ux = q1 + 1.75*cv*0.9*q4*c4, uy = 1.75*cv*q2;
+          const gx = Math.cos(u)*ux - 0.53*Math.sin(v2)*1.2*q4*c4 + 0.4*Math.cos(w2)*q5;
+          const gy = Math.cos(u)*uy - 0.53*Math.sin(v2)*q3 - 0.4*Math.cos(w2)*q5;
+          const nm = Math.hypot(gx,gy)||1;
+          z = Math.tanh(1.9*f);
+          const inplane = Math.sqrt(Math.max(0,1-z*z));
+          a = inplane * gx/nm * sD;
+          b = inplane * gy/nm * sD;
+        }
+        else if (p.init === 'twodom') { const dl = Math.max(c, 3e-9), th = 2 * Math.atan(Math.exp(x / dl)); z = Math.cos(th); a = Math.sin(th); }
+        e.mx[id] = a; e.my[id] = b; e.mz[id] = z;
+      }
+    }
+    for (let i = 0; i < e.n; i++) {
+      const nn = Math.sqrt(e.mx[i] * e.mx[i] + e.my[i] * e.my[i] + e.mz[i] * e.mz[i]) || 1;
+      e.mx[i] /= nn; e.my[i] /= nn; e.mz[i] /= nn;
+    }
+    e.t = 0;
+    e.pulses = [];
+    e.coolDown();
+    this.t = 0;
+    this.relaxSteps = 0;
+    this.hist = newHist(3);
+    this.ehist = { x: [], v: [], names: [] };
+    this.eStamp = 0;
+    this.Q = 0;
+    this.E = null;
+    this.peakT = 0;
+    this.brushed = false;
+  }
+
+  applyPreset(k) {
+    const m = MATS[k];
+    if (!m) return;
+    const set = Object.assign({}, m, m.geo);
+    delete set.geo; delete set.name;
+    set.mat = k; set.T = 0; set.Tc = 0; set.drv = 'relax';
+    Object.keys(set).forEach(function (q) { this.p[q] = set[q]; this.host.setParamUI(q, set[q]); }, this);
+    this.rebuild();
+    this.host.toast('Matériau : ' + m.name);
+  }
+
+  onParam(id, v) {
+    if (id === 'mat') { this.applyPreset(v); return; }
+    if (id === 'A' || id === 'K' || id === 'D' || id === 'Bz' || id === 'demag') this.dirtyTerms = true;
+  }
+
+  reset() { this.initState(); }
+
+  action(id) {
+    if (id === 'init' || id === 'reset') this.initState();
+    else if (id === 'uniform') { this.p.init = 'uz'; this.initState(); }
+    else if (id === 'seed') this.seedAt((this.eng.nx / 2) | 0, (this.eng.ny / 2) | 0);
+  }
+
+  // La brosse dessine une condition initiale, pas une nucléation laser ou courant.
+  seedAt(ix, iy) {
+    const e = this.eng, p = this.p;
+    const x0 = (ix + 0.5) * e.c, y0 = (iy + 0.5) * e.c;
+    const R = Math.max(5 * e.c, Math.min(34e-9, e.nx * e.c / 4)), sign = p.D < 0 ? -1 : 1;
+    const mid = Math.min(e.ny - 1, Math.max(0, iy)) * e.nx + Math.min(e.nx - 1, Math.max(0, ix));
+    const bg = e.mz[mid] < 0 ? -1 : 1;
+    for (let j = 0; j < e.ny; j++) for (let i = 0; i < e.nx; i++) {
+      const id = j * e.nx + i;
+      if (e.mask && !e.mask[id]) continue;
+      let x = (i + 0.5) * e.c - x0, y = (j + 0.5) * e.c - y0;
+      if (e.px) x -= Math.round(x / (e.nx * e.c)) * e.nx * e.c;
+      if (e.py) y -= Math.round(y / (e.ny * e.c)) * e.ny * e.c;
+      const rr = Math.hypot(x, y);
+      if (rr >= R) continue;
+      if (p.mat === 'py') {
+        const v = Math.max(0, 1 - rr / R), ang = 0.7 * Math.PI * v;
+        const a = e.mx[id], b = e.my[id];
+        e.mx[id] = Math.cos(ang) * a - Math.sin(ang) * b;
+        e.my[id] = Math.sin(ang) * a + Math.cos(ang) * b;
+      } else {
+        const theta = Math.PI * (1 - rr / R), rad = rr > 1e-15 ? 1 / rr : 0;
+        const xx = sign * bg * Math.sin(theta) * x * rad;
+        const yy = sign * bg * Math.sin(theta) * y * rad;
+        const zz = bg * Math.cos(theta);
+        const a = Math.min(1, Math.max(0, (R - rr) / (2 * e.c)));
+        e.mx[id] = e.mx[id] * (1 - a) + xx * a;
+        e.my[id] = e.my[id] * (1 - a) + yy * a;
+        e.mz[id] = e.mz[id] * (1 - a) + zz * a;
+      }
+      const norm = Math.hypot(e.mx[id], e.my[id], e.mz[id]) || 1;
+      e.mx[id] /= norm; e.my[id] /= norm; e.mz[id] /= norm;
+    }
+    this.brushed = true;
+  }
+
+  pointer(kind, px, py) {
+    if ((kind !== 'down' && kind !== 'move') || !this.fv || !this.eng) return;
+    const q = this.cellAt(px, py);
+    if (q) this.seedAt(Math.floor(q[0]), Math.floor(q[1]));
+  }
+
+  setPhoneB(bx, by) {
+    // Pas de pilotage téléphone dans ce bac à sable : H est uniquement perpendiculaire.
+  }
+
+  beforeFrame() {
+    if (this.dirtyGeo) this.rebuild();
+    else if (this.dirtyTerms) this.retune();
+  }
+
+  afterFrame() {
+    // Le bac à sable n'affiche aucune courbe ni énergie globale.
+    // La texture est la sortie principale ; ne pas calculer les observables
+    // coûteuses à chaque image améliore la fluidité des interactions.
+    this.m = this.eng.mean();
+    this.obs = { mz: this.m[2], brushed: !!this.brushed };
+  }
+
+  hud() {
+    const m = this.m || [0, 0, 0], g = this.gridNow;
+    const out = [
+      ['⟨m⟩', '(' + frNum(m[0], 2) + ' ; ' + frNum(m[1], 2) + ' ; ' + frNum(m[2], 2) + ')', 'hot'],
+      ['Charge topologique Q', frNum(this.Q, 2)],
+      ['Énergie totale', this.E ? sciStr(this.E.total, 2) + ' J' : '—'],
+      [this.relaxMode ? 'Convergence |m×B|' : 'Temps simulé', this.relaxMode ? frNum(this.torque * 1e3, 2) + ' mT' : fmtTime(this.t), this.relaxMode && this.torque < 1e-3 ? 'good' : ''],
+      ['Maillage', this.eng.nx + ' × ' + this.eng.ny + ' × 1' + (this.tooBig ? ' (refusé : ' + g.nx + ' × ' + g.ny + ')' : ''), this.tooBig ? 'bad' : '']
+    ];
+    return out;
+  }
+
+  limits() {
+    const p = this.p, g = this.grid();
+    const rows = physLimits({ c: g.c, dz: g.dz, Ms: p.Ms * 1e3, A: p.A * 1e-12, K: p.K * 1e3, Ktype: p.Ktype, Kaxis: p.Kaxis, D: p.Dtype === 'none' ? 0 : p.D * 1e-3, demag: p.demag, nx: g.nx, ny: g.ny, px: g.px, py: g.py, T: 0, Tc: 0, dt: this.relaxMode || !this.eng ? 0 : this.eng.dt });
+    if (p.shape !== 'rect' && p.bc === 'pbc') rows.push({ lab: 'Forme et périodicité', val: p.shape, rule: 'Bords périodiques : seule la forme rectangle a un sens. Rectangle utilisé.', lvl: 'warn', src: ['pbcub'] });
+    return rows;
+  }
+
+  draw(ctx, W, H) {
+    const e = this.eng, p = this.p;
+    this.fv.paint(e, p.disp);
+    const L = this.fv.draw(ctx, W, H, 22);
+    if (p.arrows) drawArrowsOver(ctx, e, this.fv, Math.max(2, Math.round(Math.max(e.nx, e.ny) / 24)));
+    const span = Math.max(e.nx, e.ny) * e.c, bar = niceStep(span / 4);
+    drawScaleBar(ctx, L.x0 + 10, L.y0 + e.ny * L.s + 16, bar / e.c * L.s, frNum(bar * 1e9, 0) + ' nm');
+    // La légende des couleurs est dans la fiche du preset, pas sur la texture.
+    if (this.tooBig) drawLabel(ctx, 'Maillage refusé : trop de cellules', W / 2, L.y0 + 18, { align: 'center', col: PAL.red });
+  }
+
+  drawPlots(p1, p2) {
+    const h = this.hist, xs = [], k = this.relaxMode ? 1e-3 : 1e9, xl = this.relaxMode ? 'itérations (milliers)' : 't (ns)';
+    for (let i = 0; i < h.t.length; i++) xs.push(h.t[i] * k);
+    const x0 = xs.length ? xs[0] : 0, x1 = xs.length > 1 ? Math.max(xs[xs.length - 1], x0 + 1e-6) : x0 + 1;
+    p1.begin('Aimantation moyenne', x0, x1, -1.05, 1.05, xl, '⟨m⟩');
+    p1.clip();
+    p1.line(xs, h.v[0], PAL.red, 2); p1.line(xs, h.v[1], PAL.leaf, 2); p1.line(xs, h.v[2], PAL.blue, 2);
+    p1.unclip();
+    p1.legend([{ col: PAL.red, label: 'm_x' }, { col: PAL.leaf, label: 'm_y' }, { col: PAL.blue, label: 'm_z' }]);
+    const eh = this.ehist, ex = [];
+    for (let i = 0; i < eh.x.length; i++) ex.push(eh.x[i] * k);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < eh.v.length; i++) for (let q = 0; q < eh.v[i].length; q++) { lo = Math.min(lo, eh.v[i][q]); hi = Math.max(hi, eh.v[i][q]); }
+    if (!(hi > lo)) { lo = -1; hi = 1; }
+    const pad = (hi - lo) * 0.1;
+    const e0 = ex.length ? ex[0] : 0, e1 = ex.length > 1 ? Math.max(ex[ex.length - 1], e0 + 1e-6) : e0 + 1;
+    p2.begin('Énergies par terme (aJ)', e0, e1, lo - pad, hi + pad, xl, 'E (aJ)');
+    p2.clip();
+    const cols = [PAL.ink, PAL.plum, PAL.gold, PAL.teal, PAL.red, PAL.blue, PAL.leaf], defs = [];
+    for (let q = 0; q < eh.names.length; q++) {
+      const ys = eh.v.map(function (r) { return r[q]; });
+      p2.line(ex, ys, cols[q % cols.length], 2);
+      defs.push({ col: cols[q % cols.length], label: eh.names[q] });
+    }
+    p2.unclip();
+    p2.legend(defs);
+  }
+}
+
 // ===== catalogue/models.js =====
 function flickOnce(sim, s) {
   if (sim._fl === undefined) { sim._fl = s.flickN; return false; }
@@ -5596,7 +6000,7 @@ const MODELS = [
     id: 'disk', name: 'Le disque dur qui oublie',
     params: [
       { id: 'word', type: 'text', label: 'Ton mot (12 caractères max)', value: 'BONJOUR', max: 12, help: 'Puis clique sur « Écrire le mot ».' },
-      { id: 'mat', type: 'select', label: 'Support', value: 'hdd', options: [['hdd', 'Disque dur (CoCrPt)'], ['card', 'Piste de carte bancaire'], ['hamr', 'Futur : FePt + laser (HAMR)']], help: 'Chaque support a sa barrière et son champ d’anisotropie.' },
+      { id: 'mat', type: 'select', label: 'Support', value: 'hdd', options: [['hdd', 'Disque dur (CoCrPt)'], ['card', 'Piste de carte bancaire'], ['hamr', 'FePt (support pour le HAMR)']], help: 'Chaque support a sa barrière et son champ d’anisotropie.' },
       { id: 'd', label: 'Taille des grains', unit: 'nm', min: 2, max: 40, step: 0.1, value: 9, digits: 1, log: true, help: 'Volume ∝ d² : la barrière d’énergie aussi.' },
       { id: 'T', label: 'Température', unit: '°C', min: 20, max: 700, step: 5, value: 25, digits: 0, help: 'La chaleur fournit l’énergie k_BT.' },
       { id: 'clock', type: 'select', label: 'Le temps défile…', value: 'year', options: [['rt', '1 s = 1 s'], ['min', '1 s = 1 minute'], ['day', '1 s = 1 jour'], ['year', '1 s = 1 an'], ['kyear', '1 s = 1 000 ans']], help: 'Accélère pour tester la durée de vie des données.' },
@@ -5608,7 +6012,7 @@ const MODELS = [
       { label: 'Et des grains de 6 nm ?', set: { d: 6 } },
       { label: 'Et à 300 °C ?', set: { T: 300 } },
       { label: 'Et une carte bancaire ?', set: { mat: 'card' } },
-      { label: 'Et le disque du futur ?', set: { mat: 'hamr', laser: true } }
+      { label: 'Tester le HAMR', set: { mat: 'hamr', laser: true } }
     ],
     challenges: [
       { id: 'dsk1', text: 'Garde ton mot intact pendant 10 ans', test: function (o) { return o.wrote && o.ok && o.simT >= 3.156e8 && o.correct === 96; } },
@@ -5920,6 +6324,7 @@ function ubInitPy(p) {
   if (k === 'rand') return 'rng = np.random.default_rng(1)\n\ndef m_init(point):\n    return 2 * rng.random(3) - 1';
   if (k === 'vortex') return 'def m_init(point):\n    x, y, z = point\n    return (-(y - Ly / 2), x - Lx / 2, 10e-9)';
   if (k === 'sky') return 'def m_init(point):\n    x, y, z = point\n    if (x - Lx / 2) ** 2 + (y - Ly / 2) ** 2 < (min(Lx, Ly) / 6) ** 2:\n        return (0, 0, -1)\n    return (0, 0, 1)';
+  if (k === 'maze') return 'def m_init(point):\n    x, y, z0 = point\n    x -= Lx/2; y -= Ly/2\n    q1, q2, q3, q4, q5 = [2*np.pi/s for s in (96e-9, 135e-9, 90e-9, 140e-9, 170e-9)]\n    v = q2*y + 0.9*np.sin(q4*x)\n    u = q1*x + 1.75*np.sin(v)\n    v2 = q3*y + 1.2*np.sin(q4*x)\n    w = q5*(x-y)\n    f = np.sin(u) + 0.53*np.cos(v2) + 0.4*np.sin(w)\n    ux = q1 + 1.75*np.cos(v)*0.9*q4*np.cos(q4*x)\n    uy = 1.75*np.cos(v)*q2\n    gx = np.cos(u)*ux - 0.53*np.sin(v2)*1.2*q4*np.cos(q4*x) + 0.4*np.cos(w)*q5\n    gy = np.cos(u)*uy - 0.53*np.sin(v2)*q3 - 0.4*np.cos(w)*q5\n    n = np.hypot(gx,gy) or 1\n    mz = np.tanh(1.9*f)\n    xy = np.sqrt(max(0,1-mz*mz))\n    return (xy*gx/n, xy*gy/n, mz)';
   if (k === 'stripes') return 'lam = ' + py(p.D ? 4 * Math.PI * p.A * 1e-12 / Math.abs(p.D * 1e-3) : 50e-9) + '\n\ndef m_init(point):\n    x, y, z = point\n    return (np.sin(2 * np.pi * x / lam), 0, np.cos(2 * np.pi * x / lam))';
   if (k === 'twodom') return 'def m_init(point):\n    x, y, z = point\n    return (0, 0, 1) if x < Lx / 2 else (0, 0, -1)';
   return 'm_init = (0, 0, 1)';
@@ -5934,7 +6339,7 @@ function ubNormPy(p) {
 }
 
 function ubZeePy(p) {
-  const out = ['mm.Zeeman(H=' + pyVec([p.Bx, p.By, p.Bz].map(function (b) { return b * 1e-3 / MU0; })) + ', name="Hdc")'];
+  const out = ['mm.Zeeman(H=' + pyVec([0, 0, p.Bz].map(function (b) { return b * 1e-3 / MU0; })) + ', name="Hdc")'];
   let pre = '';
   if (p.fun !== 'none' && (p.bx || p.by || p.bz)) {
     const H = pyVec([p.bx, p.by, p.bz].map(function (b) { return b * 1e-3 / MU0; }));
@@ -5951,94 +6356,43 @@ function ubZeePy(p) {
 }
 
 function ubSandboxPy(p) {
-  const t = [], z = ubZeePy(p), T = p.drv === 'llg' ? p.T : 0;
+  const t = [], z = ubZeePy(p); 
   t.push('mm.Exchange(A=' + py(p.A * 1e-12) + ')');
-  if (p.Dtype !== 'none' && p.D) t.push('mm.DMI(D=' + py(p.D * 1e-3) + ', crystalclass="' + (p.Dtype === 'T' ? 'T' : 'Cnv_z') + '")');
-  if (p.Ktype === 'uni' && p.K) t.push('mm.UniaxialAnisotropy(K=' + py(p.K * 1e3) + ', u=' + ubAxis(p.Kaxis) + ')');
-  if (p.Ktype === 'cubic' && p.K) t.push('mm.CubicAnisotropy(K=' + py(p.K * 1e3) + ', u1=(1, 0, 0), u2=(0, 1, 0))');
+  if (p.D) t.push('mm.DMI(D=' + py(p.D * 1e-3) + ', crystalclass="Cnv_z")');
+  if (p.K) t.push('mm.UniaxialAnisotropy(K=' + py(p.K * 1e3) + ', u=(0, 0, 1))');
   if (p.demag) t.push('mm.Demag()');
   const all = t.concat(z.terms);
   let s = 'Lx, Ly, t = ' + py(p.Lx * 1e-9) + ', ' + py(p.Ly * 1e-9) + ', ' + py(p.tz * 1e-9) + '\ncell = ' + py(p.cell * 1e-9) + '\nMs = ' + py(p.Ms * 1e3) + '\n\n';
   s += 'region = df.Region(p1=(0, 0, 0), p2=(Lx, Ly, t))\nmesh = df.Mesh(region=region, cell=(cell, cell, t)' + (p.bc === 'pbc' ? ', bc="xy"' : '') + ')\n\n';
   s += ubNormPy(p) + '\n\n' + ubInitPy(p) + '\n\n' + z.pre;
-  s += 'system = mm.System(name="bac_a_sable"' + (T > 0 ? ', T=' + py(T) : '') + ')\nsystem.energy = (\n    ' + all.join('\n    + ') + '\n)\n';
+  s += 'system = mm.System(name="bac_a_sable"' + '' + ')\nsystem.energy = (\n    ' + all.join('\n    + ') + '\n)\n';
   s += 'system.dynamics = mm.Precession(gamma0=mm.consts.gamma0) + mm.Damping(alpha=' + py(p.alpha) + ')\n';
   s += 'system.m = df.Field(mesh, nvdim=3, value=m_init, norm=norm, valid="norm")';
   let d;
-  if (p.drv === 'relax') d = 'md = oc.MinDriver()\nmd.drive(system)\nsystem.m.z.sel("z").mpl()';
-  else d = (T > 0 ? 'td = oc.TimeDriver(evolver=oc.UHH_ThetaEvolver(fixed_timestep=2e-13))' : 'td = oc.TimeDriver()') + '\ntd.drive(system, t=2e-9, n=200)\nsystem.table.mpl(y=["mx", "my", "mz"])\nsystem.m.z.sel("z").mpl()';
+  d = 'md = oc.MinDriver()\nmd.drive(system)\nsystem.m.z.sel("z").mpl()';
   return [s, d];
 }
 
+// Le bac à sable ne possède qu'un seul ensemble de commandes, sans panneau « expert ».
+// Les paramètres géométriques, Ms et alpha sont fixés par le cas de départ.
 const SANDBOX_PARAMS = [
-  { type: 'head', label: 'Matériau', open: true },
-  { id: 'mat', type: 'select', label: 'Préréglage tiré de la littérature', value: 'copt', options: [['py', 'Permalloy (µMAG n°4)'], ['yig', 'YIG, grenat'], ['cofeb', 'CoFeB, dans le plan'], ['copt', 'Co/Pt + DMI (Sampaio 2013)'], ['ircopt', 'Ir/Co/Pt, labyrinthes'], ['fege', 'FeGe, DMI de volume (Beg 2015)'], ['fept', 'FePt L1₀, très dur'], ['custom', 'Personnalisé']], help: 'Change Ms, A, K, D, α, T_C et propose une géométrie adaptée. Sources dans l’onglet Sources.' },
-  { id: 'Ms', label: 'Aimantation à saturation Ms', unit: 'kA/m', min: 50, max: 1800, step: 5, value: 580, digits: 0 },
-  { id: 'A', label: 'Échange A', unit: 'pJ/m', min: 1, max: 30, step: 0.01, value: 15, digits: 2 },
-  { id: 'Ktype', type: 'select', label: 'Anisotropie', value: 'uni', options: [['none', 'aucune'], ['uni', 'uniaxiale'], ['cubic', 'cubique']] },
-  { id: 'K', label: 'Constante K', unit: 'kJ/m³', min: -1000, max: 8000, step: 1, value: 800, digits: 0, help: 'K > 0 : axe facile. K < 0 : plan facile (uniaxiale).' },
-  { id: 'Kaxis', type: 'select', label: 'Axe de l’anisotropie uniaxiale', value: 'z', options: [['z', 'z, hors du plan'], ['x', 'x'], ['y', 'y']] },
-  { id: 'Dtype', type: 'select', label: 'Interaction DMI', value: 'Cnv_z', options: [['none', 'aucune'], ['Cnv_z', 'interfaciale (C_nv, parois de Néel)'], ['T', 'de volume (T, cristaux B20)']] },
-  { id: 'D', label: 'Constante D', unit: 'mJ/m²', min: -5, max: 5, step: 0.01, value: 3, digits: 2, help: 'Le signe choisit la chiralité.' },
-  { id: 'alpha', label: 'Amortissement α', unit: '', min: 0.0001, max: 1, step: 0.0001, value: 0.3, digits: 4, log: true },
-  { id: 'demag', type: 'check', label: 'Champ démagnétisant', value: true },
-  { id: 'Tc', label: 'Température de Curie T_C', unit: 'K', min: 100, max: 1500, step: 5, value: 500, digits: 0, help: 'Sert seulement à l’impulsion lumineuse.' },
-  { id: 'T', label: 'Température du bain T', unit: 'K', min: 0, max: 600, step: 1, value: 0, digits: 0, help: 'Bruit thermique de Brown, en dynamique LLG seulement.' },
-  { type: 'head', label: 'Géométrie' },
-  { id: 'shape', type: 'select', label: 'Forme', value: 'disk', options: [['rect', 'rectangle'], ['disk', 'disque / ellipse'], ['ring', 'anneau'], ['notch', 'piste à entailles']] },
-  { id: 'Lx', label: 'Longueur L_x', unit: 'nm', min: 5, max: 3000, step: 1, value: 128, digits: 0, log: true },
-  { id: 'Ly', label: 'Largeur L_y', unit: 'nm', min: 5, max: 3000, step: 1, value: 128, digits: 0, log: true },
-  { id: 'tz', label: 'Épaisseur t (une couche)', unit: 'nm', min: 0.3, max: 50, step: 0.1, value: 1, digits: 1, log: true },
-  { id: 'cell', label: 'Taille de cellule', unit: 'nm', min: 0.25, max: 25, step: 0.05, value: 4, digits: 2, log: true, help: 'Regarde l’onglet Limites : la cellule doit rester sous l_ex, δ et 2A/D.' },
-  { id: 'bc', type: 'select', label: 'Bords', value: 'open', options: [['open', 'libres'], ['pbc', 'périodiques (film infini)']] },
-  { type: 'head', label: 'Champ H en 3D et f(t)' },
-  { id: 'Bx', label: 'μ₀H_x statique', unit: 'mT', min: -1000, max: 1000, step: 1, value: 0, digits: 0 },
-  { id: 'By', label: 'μ₀H_y statique', unit: 'mT', min: -1000, max: 1000, step: 1, value: 0, digits: 0 },
-  { id: 'Bz', label: 'μ₀H_z statique', unit: 'mT', min: -1000, max: 1000, step: 1, value: 0, digits: 0 },
-  { id: 'fun', type: 'select', label: 'Champ variable h(t) = h·f(t)', value: 'none', options: [['none', 'aucun'], ['sin', 'sinus sin 2πf(t − t₀)'], ['window', 'impulsion carrée'], ['gauss', 'impulsion gaussienne'], ['ramp', 'rampe'], ['sinc', 'sinc, large bande']] },
-  { id: 'bx', label: 'μ₀h_x', unit: 'mT', min: -500, max: 500, step: 1, value: 0, digits: 0 },
-  { id: 'by', label: 'μ₀h_y', unit: 'mT', min: -500, max: 500, step: 1, value: 10, digits: 0 },
-  { id: 'bz', label: 'μ₀h_z', unit: 'mT', min: -500, max: 500, step: 1, value: 0, digits: 0 },
-  { id: 'f', label: 'Fréquence f', unit: 'GHz', min: 0.1, max: 100, step: 0.01, value: 5, digits: 2, log: true },
-  { id: 't0', label: 'Instant t₀', unit: 'ns', min: 0, max: 10, step: 0.01, value: 0.1, digits: 2 },
-  { id: 'tw', label: 'Durée (impulsion, rampe)', unit: 'ns', min: 0.005, max: 10, step: 0.005, value: 0.1, digits: 3, log: true },
-  { type: 'head', label: 'Impulsion lumineuse (touche l’échantillon)' },
-  { id: 'lw', label: 'Rayon du spot w', unit: 'nm', min: 5, max: 500, step: 1, value: 30, digits: 0, log: true },
-  { id: 'ldT', label: 'Échauffement maximal ΔT', unit: 'K', min: 10, max: 2000, step: 10, value: 600, digits: 0 },
-  { id: 'ltau', label: 'Temps de refroidissement τ', unit: 'ns', min: 0.02, max: 5, step: 0.01, value: 0.3, digits: 2, log: true },
-  { type: 'head', label: 'Pilote et affichage' },
-  { id: 'init', type: 'select', label: 'État initial', value: 'sky', options: [['uz', 'uniforme +z'], ['ux', 'uniforme +x'], ['rand', 'aléatoire (désaimanté)'], ['vortex', 'vortex'], ['sky', 'skyrmion'], ['stripes', 'bandes'], ['twodom', 'deux domaines']] },
-  { id: 'drv', type: 'select', label: 'Pilote', value: 'llg', options: [['llg', 'dynamique LLG (TimeDriver)'], ['relax', 'relaxation (MinDriver)']] },
-  { id: 'disp', type: 'select', label: 'Couleurs', value: 'wheel', options: [['wheel', 'direction (roue) + m_z'], ['mz', 'm_z'], ['mx', 'm_x'], ['my', 'm_y']] },
-  { id: 'arrows', type: 'check', label: 'Flèches', value: false }
+  { id: 'mat', type: 'select', label: 'Structure de départ', value: 'ircopt', options: [
+    ['py', 'Vortex de permalloy'], ['ircopt', 'Labyrinthe Ir/Co/Pt'], ['copt', 'Skyrmion Co/Pt']
+  ] },
+  { id: 'A', label: 'Échange A', unit: 'pJ/m', min: 1, max: 30, step: 0.25, value: 10, digits: 2 },
+  { id: 'K', label: 'Anisotropie K_u', unit: 'kJ/m³', min: -300, max: 1400, step: 1, value: 717, digits: 0 },
+  { id: 'D', label: 'DMI D', unit: 'mJ/m²', min: -5, max: 5, step: 0.05, value: 1.9, digits: 2 },
+  { id: 'Bz', label: 'Champ μ₀H_z', unit: 'mT', min: -400, max: 400, step: 2, value: 0, digits: 0 },
+  { id: 'demag', type: 'check', label: 'Champ démagnétisant', value: true }
 ];
 
 MODELS.push(
   {
     id: 'sandbox', name: 'Bac à sable micromagnétique',
     params: SANDBOX_PARAMS,
-    buttons: [{ id: 'init', label: 'Réappliquer l’état initial' }, { id: 'flash', label: 'Flash au centre' }, { id: 'zero', label: 'Remettre t à 0' }],
-    whatIf: [
-      { label: 'Labyrinthe, puis flash', set: { mat: 'ircopt' }, act: 'flash' },
-      { label: 'FePt avec une maille trop grosse', set: { mat: 'fept', cell: 2 } },
-      { label: 'Vortex de CoFeB', set: { mat: 'cofeb' } },
-      { label: 'Skyrmion de FeGe', set: { mat: 'fege' } },
-      { label: 'Excitation large bande', set: { fun: 'sinc', by: 10, f: 30, t0: 0.2 } }
-    ],
-    challenges: [
-      { id: 'sb1', text: 'Dépasse localement T_C avec une impulsion lumineuse', test: function (o) { return o.hot && o.peakT > o.Tc; } },
-      { id: 'sb2', text: 'Écris un skyrmion à la lumière (|Q| ≥ 1 une fois refroidi)', test: function (o) { return o.flashed && !o.hot && Math.abs(o.Q) >= 0.8; } },
-      { id: 'sb3', text: 'Relaxe jusqu’à l’équilibre (|m × B| < 1 mT)', test: function (o) { return o.conv; } },
-      { id: 'sb4', text: 'Tous les voyants des limites au vert', test: function (o) { return o.limOK; } }
-    ],
-    phone: {
-      uses: ['tilt', 'flick', 'shake'], hint: 'Penche le téléphone : le champ dans le plan suit (±100 mT). Une pichenette tire un flash au centre.',
-      apply: function (sim, s, dt, host) {
-        const bx = Math.round(s.tilt.x * 100), by = Math.round(s.tilt.y * 100);
-        if (bx !== sim.p.Bx || by !== sim.p.By) { sim.setPhoneB(bx, by); host.setParamUI('Bx', bx); host.setParamUI('By', by); }
-        if (flickOnce(sim, s)) sim.action('flash');
-      }
-    },
+    buttons: [],
+    whatIf: [],
+    challenges: [],
     create: function (h, d) { return new SandboxSim(h, d); }
   },
   {
@@ -6112,7 +6466,7 @@ MODELS.push(
   }
 );
 
-UB.links.sandbox = ['first', 'energy', 'dyn', 'units', 'dmi', 'uniax', 'tdf', 'pbc', 'finiteT', 'svp1', 'apiZeeman'];
+UB.links.sandbox = ['first', 'energy', 'dmi', 'uniax', 'pbc', 'apiZeeman'];
 UB.links.paroi_pin = ['dwpair', 'svp1', 'svp2', 'dmi', 'apiZL', 'sttdw'];
 UB.links.labyrinthe = ['hyst', 'pbc', 'dmi', 'tools', 'apiHD', 'ltem'];
 
@@ -6137,11 +6491,11 @@ UB.map.labyrinthe = function (p) {
 UB.cells.sandbox = function (p) {
   const c = ubSandboxPy(p);
   return [
-    { md: '# Bac à sable\nMême système que dans Aimantarium : matériau, géométrie, champ H(t) en 3D.' },
+    { md: '# Bac à sable\nTrois configurations fixes, cinq leviers A, K, D, H_z, démagnétisation. Modèle 2D, T = 0 K. Les motifs initiaux sont imposés puis relaxés.' },
     { py: UB_HEAD },
     { py: c[0] },
     { py: c[1] },
-    { md: 'L’impulsion lumineuse n’existe pas dans Ubermag. Pour l’imiter : découpe le temps en tranches et diminue Ms, A et K dans une sous-région chauffée (paramètres variables dans l’espace).' }
+    { md: 'Le clic dans le navigateur modifie artificiellement la condition initiale locale. Il ne modélise ni laser, ni courant, ni barrière de nucléation. Ce notebook ne reproduit pas ces coups de pinceau.' }
   ];
 };
 
@@ -6167,416 +6521,1122 @@ UB.cells.labyrinthe = function (p) {
   return [{ md: '# Du labyrinthe aux bulles\nFilm infini, DMI interfaciale. On part d’un état désaimanté, puis on monte B_z en relaxant à chaque pas.' }, { py: UB_HEAD }, { py: s }, { py: d }];
 };
 
-// ===== catalogue/parcours.js =====
-const GRANDEURS = {
-  B: { sym: 'B', name: 'Champ magnétique', unit: 'mT', role: 'Il tire sur l’aimantation : il la fait tourner, basculer, et pousse les parois.' },
-  m: { sym: 'm', name: 'Aimantation', unit: 'sans unité', role: 'La direction où pointent ensemble les minuscules aimants (les spins) d’une petite région.' },
-  A: { sym: 'A', name: 'Échange', unit: 'pJ/m', role: 'Chaque spin veut pointer comme ses voisins : les changements de direction se font en douceur.' },
-  K: { sym: 'K', name: 'Anisotropie', unit: 'kJ/m³', role: 'Le matériau préfère un axe (ici vertical) : les spins aiment pointer ↑ ou ↓, pas de travers.' },
-  alpha: { sym: 'α', name: 'Frottement', unit: 'sans unité', role: 'Il freine la rotation de l’aimantation et finit par l’aligner sur le champ.' },
-  def: { sym: 'ΔK', name: 'Défauts', unit: '', role: 'Entailles, grains irréguliers : des creux d’énergie qui retiennent les parois.' },
-  D: { sym: 'D', name: 'Interaction DMI', unit: 'mJ/m²', role: 'Elle favorise une rotation dans un sens précis : bandes, bulles, tourbillons.' },
-  T: { sym: 'T', name: 'Température', unit: 'K', role: 'L’agitation retourne des spins au hasard. Au-dessus de T_C, plus d’aimantation d’ensemble.' }
+// ===== catalogue/sources.js =====
+const REFS = {
+  openfields: ['OpenStax, University Physics Vol. 2, §11.2 : champs et lignes magnétiques (cours ouvert)', 'https://openstax.org/books/university-physics-volume-2/pages/11-2-magnetic-fields-and-lines'],
+  nistdw: ['D. C. Ralph et M. D. Stiles, Spin Transfer Torques (NIST), introduction aux parois magnétiques, accès libre', 'https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=620024'],
+  jagla: ['E. A. Jagla, Numerical simulations of two-dimensional magnetic domain patterns, Phys. Rev. E 70, 046204 (2004), prépublication libre', 'https://arxiv.org/abs/cond-mat/0402406'],
+  ubermag: ['M. Beg, M. Lang, H. Fangohr, « Ubermag: Toward more effective micromagnetic workflows », IEEE Trans. Magn. 58, 7300205 (2022)', 'https://doi.org/10.1109/TMAG.2021.3078896'],
+  ubdyn: ['Documentation Ubermag : l’équation de dynamique (LLG)', 'https://ubermag.github.io/getting-started/notebooks/dynamics-equation.html'],
+  ubenergy: ['Documentation Ubermag : l’équation d’énergie', 'https://ubermag.github.io/getting-started/notebooks/energy-equation.html'],
+  pbcub: ['Documentation Ubermag : conditions aux limites périodiques', 'https://ubermag.github.io/examples/notebooks/periodic-boundary-conditions.html'],
+  gilbert: ['T. L. Gilbert, « A phenomenological theory of damping in ferromagnetic materials », IEEE Trans. Magn. 40, 3443 (2004)', 'https://doi.org/10.1109/TMAG.2004.836740'],
+  brown: ['W. F. Brown, « Thermal fluctuations of a single-domain particle », Phys. Rev. 130, 1677 (1963)', 'https://doi.org/10.1103/PhysRev.130.1677'],
+  abo: ['G. S. Abo et al., « Definition of magnetic exchange length », IEEE Trans. Magn. 49, 4937 (2013)', 'https://doi.org/10.1109/TMAG.2013.2258028'],
+  mumag: ['µMAG (NIST), problème standard n°4 : Permalloy, A = 1,3×10⁻¹¹ J/m, Ms = 8,0×10⁵ A/m, α = 0,02', 'https://www.ctcms.nist.gov/~rdm/std4/spec4.html'],
+  kalinikos: ['B. A. Kalinikos, A. N. Slavin, J. Phys. C 19, 7013 (1986) : champ dipolaire d’un film mince', 'https://doi.org/10.1088/0022-3719/19/35/014'],
+  hubert: ['A. Hubert, R. Schäfer, « Magnetic Domains », Springer (1998)', 'https://doi.org/10.1007/978-3-540-85054-0'],
+  rohart: ['S. Rohart, A. Thiaville, « Skyrmion confinement in ultrathin film nanostructures in the presence of DMI », Phys. Rev. B 88, 184422 (2013)', 'https://doi.org/10.1103/PhysRevB.88.184422'],
+  bogdanov: ['A. Bogdanov, A. Hubert, « Thermodynamically stable magnetic vortex states in magnetic crystals », J. Magn. Magn. Mater. 138, 255 (1994)', 'https://doi.org/10.1016/0304-8853(94)90046-9'],
+  callen: ['H. B. Callen, E. Callen, « The present status of the temperature dependence of magnetocrystalline anisotropy », J. Phys. Chem. Solids 27, 1271 (1966)', 'https://doi.org/10.1016/0022-3697(66)90012-6'],
+  crit: ['J. C. Le Guillou, J. Zinn-Justin, Phys. Rev. B 21, 3976 (1980) : exposant critique β ≈ 0,36 (Heisenberg 3D)', 'https://doi.org/10.1103/PhysRevB.21.3976'],
+  beaurepaire: ['E. Beaurepaire et al., « Ultrafast spin dynamics in ferromagnetic nickel », Phys. Rev. Lett. 76, 4250 (1996)', 'https://doi.org/10.1103/PhysRevLett.76.4250'],
+  je: ['S.-G. Je et al., « Creation of magnetic skyrmion bubble lattices by ultrafast laser in ultrathin films », Nano Lett. 18, 7362 (2018)', 'https://doi.org/10.1021/acs.nanolett.8b03653'],
+  sampaio: ['J. Sampaio et al., « Nucleation, stability and current-induced motion of isolated magnetic skyrmions in nanostructures », Nat. Nanotechnol. 8, 839 (2013)', 'https://doi.org/10.1038/nnano.2013.210'],
+  boulle: ['O. Boulle et al., « Room-temperature chiral magnetic skyrmions in ultrathin magnetic nanostructures », Nat. Nanotechnol. 11, 449 (2016)', 'https://doi.org/10.1038/nnano.2015.315'],
+  moreau: ['C. Moreau-Luchaire et al., « Additive interfacial chiral interaction in multilayers for stabilization of small individual skyrmions at room temperature », Nat. Nanotechnol. 11, 444 (2016) : A = 10 pJ/m, D = 1,9 mJ/m²', 'https://doi.org/10.1038/nnano.2015.313'],
+  woo: ['S. Woo et al., « Observation of room-temperature magnetic skyrmions and their current-driven dynamics in ultrathin metallic ferromagnets », Nat. Mater. 15, 501 (2016)', 'https://doi.org/10.1038/nmat4593'],
+  seul: ['M. Seul, D. Andelman, « Domain shapes and patterns: the phenomenology of modulated phases », Science 267, 476 (1995)', 'https://doi.org/10.1126/science.267.5197.476'],
+  jiang15: ['W. Jiang et al., « Blowing magnetic skyrmion bubbles », Science 349, 283 (2015)', 'https://doi.org/10.1126/science.aaa1442'],
+  beg: ['M. Beg et al., « Ground state search, hysteretic behaviour, and reversal mechanism of skyrmionic textures in confined helimagnetic nanostructures », Sci. Rep. 5, 17137 (2015) : FeGe', 'https://doi.org/10.1038/srep17137'],
+  chumak: ['A. V. Chumak, A. A. Serga, B. Hillebrands, « Magnonic crystals for data processing », J. Phys. D 50, 244001 (2017) : tableau YIG, Py, CoFeB', 'https://arxiv.org/abs/1702.06701'],
+  yigcofeb: ['Paramètres YIG (Ms = 140 kA/m, A = 3,5 pJ/m, α = 2×10⁻⁴) et CoFeB (1 250 kA/m, 15 pJ/m, α = 4×10⁻³) utilisés dans arXiv:2412.08383', 'https://arxiv.org/abs/2412.08383'],
+  weller: ['D. Weller, A. Moser, « Thermal effect limits in ultrahigh-density magnetic recording », IEEE Trans. Magn. 35, 4423 (1999)', 'https://doi.org/10.1109/20.809134'],
+  metaxas: ['P. J. Metaxas et al., « Creep and flow regimes of magnetic domain-wall motion in ultrathin Pt/Co/Pt films », Phys. Rev. Lett. 99, 217208 (2007)', 'https://doi.org/10.1103/PhysRevLett.99.217208'],
+  hayashi: ['M. Hayashi et al., « Dependence of current and field driven depinning of domain walls on their structure and chirality in permalloy nanowires », Phys. Rev. Lett. 97, 207205 (2006)', 'https://doi.org/10.1103/PhysRevLett.97.207205'],
+  gao: ['Y. Gao et al., « Depinning of domain walls in permalloy nanowires with asymmetric notches », Sci. Rep. 6, 32617 (2016)', 'https://doi.org/10.1038/srep32617'],
+  thiaville12: ['A. Thiaville et al., « Dynamics of Dzyaloshinskii domain walls in ultrathin magnetic films », EPL 100, 57002 (2012)', 'https://doi.org/10.1209/0295-5075/100/57002'],
+  walker: ['N. L. Schryer, L. R. Walker, « The motion of 180° domain walls in uniform dc magnetic fields », J. Appl. Phys. 45, 5406 (1974)', 'https://doi.org/10.1063/1.1663252'],
+  zhangli: ['S. Zhang, Z. Li, « Roles of nonequilibrium conduction electrons on the magnetization dynamics of ferromagnets », Phys. Rev. Lett. 93, 127204 (2004)', 'https://doi.org/10.1103/PhysRevLett.93.127204'],
+  thiaville05: ['A. Thiaville et al., « Micromagnetic understanding of current-driven domain wall motion in patterned nanowires », EPL 69, 990 (2005)', 'https://doi.org/10.1209/epl/i2004-10452-6'],
+  slonc: ['J. C. Slonczewski, « Current-driven excitation of magnetic multilayers », J. Magn. Magn. Mater. 159, L1 (1996)', 'https://doi.org/10.1016/0304-8853(96)00062-5'],
+  sw: ['E. C. Stoner, E. P. Wohlfarth, « A mechanism of magnetic hysteresis in heterogeneous alloys », Phil. Trans. R. Soc. A 240, 599 (1948)', 'https://doi.org/10.1098/rsta.1948.0007'],
+  kittel: ['C. Kittel, « On the theory of ferromagnetic resonance absorption », Phys. Rev. 73, 155 (1948)', 'https://doi.org/10.1103/PhysRev.73.155'],
+  back: ['C. H. Back et al., « Minimum field strength in precessional magnetization reversal », Science 285, 864 (1999)', 'https://doi.org/10.1126/science.285.5429.864'],
+  damon: ['R. W. Damon, J. R. Eshbach, « Magnetostatic modes of a ferromagnet slab », J. Phys. Chem. Solids 19, 308 (1961)', 'https://doi.org/10.1016/0022-3697(61)90041-5'],
+  sun: ['J. Z. Sun, « Spin-current interaction with a monodomain magnetic body: A model study », Phys. Rev. B 62, 570 (2000)', 'https://doi.org/10.1103/PhysRevB.62.570'],
+  kiselev: ['S. I. Kiselev et al., « Microwave oscillations of a nanomagnet driven by a spin-polarized current », Nature 425, 380 (2003)', 'https://doi.org/10.1038/nature01967'],
+  shinjo: ['T. Shinjo et al., « Magnetic vortex core observation in circular dots of permalloy », Science 289, 930 (2000)', 'https://doi.org/10.1126/science.289.5481.930'],
+  guslienko: ['K. Yu. Guslienko et al., « Eigenfrequencies of vortex state excitations in magnetic submicron-size disks », J. Appl. Phys. 91, 8037 (2002)', 'https://doi.org/10.1063/1.1450816'],
+  litzius: ['K. Litzius et al., « Skyrmion Hall effect revealed by direct time-resolved X-ray microscopy », Nat. Phys. 13, 170 (2017)', 'https://doi.org/10.1038/nphys4000'],
+  jiang17: ['W. Jiang et al., « Direct observation of the skyrmion Hall effect », Nat. Phys. 13, 162 (2017)', 'https://doi.org/10.1038/nphys3883'],
+  onsager: ['L. Onsager, « Crystal statistics. I. A two-dimensional model with an order-disorder transition », Phys. Rev. 65, 117 (1944)', 'https://doi.org/10.1103/PhysRev.65.117'],
+  metropolis: ['N. Metropolis et al., « Equation of state calculations by fast computing machines », J. Chem. Phys. 21, 1087 (1953)', 'https://doi.org/10.1063/1.1699114'],
+  sethna93: ['J. P. Sethna et al., « Hysteresis and hierarchies: dynamics of disorder-driven first-order phase transformations », Phys. Rev. Lett. 70, 3347 (1993)', 'https://doi.org/10.1103/PhysRevLett.70.3347'],
+  sethna01: ['J. P. Sethna, K. A. Dahmen, C. R. Myers, « Crackling noise », Nature 410, 242 (2001)', 'https://doi.org/10.1038/35065675'],
+  kryder: ['M. H. Kryder et al., « Heat assisted magnetic recording », Proc. IEEE 96, 1810 (2008)', 'https://doi.org/10.1109/JPROC.2008.2004315'],
+  wmm: ['NOAA, World Magnetic Model : champ terrestre 25 à 65 µT', 'https://www.ncei.noaa.gov/products/world-magnetic-model'],
+  w3cmag: ['W3C, Magnetometer API (Generic Sensor)', 'https://www.w3.org/TR/magnetometer/'],
+  w3cori: ['W3C, DeviceOrientation Event Specification', 'https://www.w3.org/TR/orientation-event/']
 };
 
-const PARCOURS = [
+const MODE_SRC = {
+  sandbox: ['ubermag', 'ubenergy', 'ubdyn', 'gilbert', 'abo', 'mumag', 'kalinikos', 'rohart', 'brown', 'beaurepaire', 'je', 'callen', 'crit', 'sampaio', 'moreau', 'beg', 'chumak', 'yigcofeb', 'weller'],
+  paroi_pin: ['hayashi', 'gao', 'metaxas', 'thiaville12', 'walker', 'sampaio', 'zhangli', 'thiaville05', 'abo'],
+  labyrinthe: ['seul', 'woo', 'jiang15', 'moreau', 'rohart', 'bogdanov', 'je', 'kalinikos', 'ubermag'],
+  wall: ['walker', 'thiaville12', 'hubert'],
+  vortex: ['shinjo', 'guslienko'],
+  skyrmion: ['rohart', 'sampaio', 'boulle', 'bogdanov'],
+  skcur: ['zhangli', 'thiaville05', 'litzius', 'jiang17', 'sampaio'],
+  compass: ['gilbert', 'ubdyn'],
+  hysteresis: ['sw'],
+  fmr: ['kittel'],
+  pulse: ['back'],
+  swave: ['damon', 'kalinikos', 'chumak'],
+  stt: ['slonc', 'sun'],
+  sto: ['slonc', 'kiselev'],
+  limaille: ['wmm'],
+  magneto: ['w3cmag', 'w3cori', 'wmm'],
+  curie: ['onsager', 'metropolis'],
+  barkhausen: ['sethna93', 'sethna01'],
+  disk: ['weller', 'kryder', 'brown']
+};
+
+const MODE_MODEL = {
+  sandbox: [
+    'Énergie : échange, DMI (interfaciale C_nv ou de volume T), anisotropie uniaxiale ou cubique, Zeeman statique + Zeeman × f(t), démagnétisant.',
+    'Dynamique : LLG (RK4, pas fixe) ou relaxation par plus grande pente (comme oc.MinDriver). Bruit thermique de Brown si T > 0.',
+    'Démagnétisant : film mince d’une cellule, noyau de Fourier f(k) = (1 − e^{−kt})/(kt). Périodique si bords périodiques et tailles en puissance de 2.',
+    'Impulsion lumineuse : chauffage gaussien T(r, t) = T₀ + ΔT·w²/w(t)²·e^{−2r²/w(t)²}·e^{−t/τ}, w(t)² = w² + 8D_th·t, D_th = 10⁻⁵ m²/s (ordre de grandeur pour un métal). On en déduit m_s(T) = (1 − T/T_C)^0,36, puis A ∝ m_s², K ∝ m_s³, D ∝ m_s², et un bruit thermique local.',
+    'T_C des matériaux : valeurs indicatives (ordre de grandeur), à remplacer par une mesure sur ton échantillon.'
+  ],
+  paroi_pin: [
+    'Piste 512 × 96 nm, épaisseur 1 nm, cellule 4 nm. Ms = 580 kA/m et A = 15 pJ/m (type Co/Pt, Sampaio 2013).',
+    'K_u = 0,45 MJ/m³, plus faible que dans Sampaio (0,8) : la paroi δ = √(A/K_eff) ≈ 8 nm couvre ainsi 2 cellules. Avec K_u = 0,8 il faudrait des cellules de 2 nm.',
+    'Démagnétisant remplacé par K_eff = K_u − μ₀Ms²/2 (film ultramince). La DMI interfaciale fixe des parois de Néel et repousse le seuil de Walker.',
+    'Accrochage : trois paires d’entailles triangulaires et des grains de 15 nm dont l’anisotropie varie de ± σ.'
+  ],
+  labyrinthe: [
+    'Film périodique 256 × 256 nm (64²) ou 512 × 512 nm (128²), épaisseur 1 nm, cellule 4 nm, démagnétisant complet.',
+    'A = 10 pJ/m et D = 1,9 mJ/m² mesurés par Moreau-Luchaire 2016 (Ir/Co/Pt). Ms = 1 MA/m et K_u = 0,78 MJ/m³ choisis pour avoir Q > 1 et D légèrement au-dessus de D_c.',
+    'Balayage quasi statique : à chaque champ on relaxe jusqu’à |m × B| < 1 mT, comme oc.HysteresisDriver.',
+    'Mesures : largeur moyenne des domaines minoritaires = 2 × aire / longueur de paroi ; une « bulle » est un domaine fermé et presque rond (rapport des axes < 1,9).'
+  ]
+};
+
+// ===== catalogue/parcours.js =====
+const GRANDEURS = {
+  B: { sym: 'B', name: 'Champ magnétique', role: 'Il peut tourner l’aimantation ou faire grandir un domaine.' },
+  m: { sym: 'm', name: 'Aimantation', role: 'Elle décrit la direction et l’intensité du magnétisme d’une région. Des moments opposés peuvent se compenser.' },
+  A: { sym: 'A', name: 'Échange', role: 'Il favorise des voisins qui pointent dans le même sens.' },
+  K: { sym: 'K', name: 'Anisotropie', role: 'Elle indique à quel point une orientation est favorisée. Un axe vertical favorise les deux sens ↑ et ↓.' },
+  D: { sym: 'D', name: 'Interaction DMI', role: 'Elle favorise un sens de rotation précis entre voisins et peut stabiliser des motifs.' },
+  demag: { sym: 'H_d', name: 'Champ démagnétisant', role: 'L’aimantation du matériau crée ce champ. Dans une couche mince, il peut favoriser des zones d’orientations différentes ou des flèches couchées.' },
+  T: { sym: 'T', name: 'Température', role: 'La chaleur augmente l’agitation des moments. Ils s’alignent moins et l’aimantation d’ensemble peut disparaître.' }
+};
+
+function guideFieldLabel(value) {
+  return value === 0 ? '0 mT · champ extérieur nul' : Math.abs(value) + ' mT ' + (value > 0 ? '↑' : '↓');
+}
+
+function guideWallRedArea(sim) {
+  const red = sim.core.mz.reduce((count, z) => count + (z > 0 ? 1 : 0), 0);
+  return frNum(100 * red / sim.nx, 0) + ' % de rouge';
+}
+
+function guideWallWidth(sim) {
+  return 'Largeur de la paroi · ' + frNum(sim.wallW * 1e9, 1) + ' nm';
+}
+
+function guideCurieTemperature(value) {
+  return frNum(value, 1) + (value < 1.4 ? ' · froid' : value > 3 ? ' · chaud' : '');
+}
+
+function guideCurieField(value) {
+  return value === 0 ? '0 · champ appliqué nul' : frNum(Math.abs(value), 2) + (value > 0 ? ' ↑' : ' ↓');
+}
+
+function guideVerticalMagnetization(sim) {
+  const mz = sim.eng.mean()[2];
+  const total = Math.round(Math.abs(mz) * 100);
+  return 'Aimantation verticale d’ensemble · ' + total + ' %' + (total === 0 ? '' : mz > 0 ? ' ↑' : ' ↓');
+}
+
+function guideCurieMeasure(sim) {
+  const red = Math.round(50 * (1 + sim.M));
+  const blue = 100 - red;
+  const total = Math.abs(red - blue);
+  const direction = total === 0 ? '' : red > blue ? ' ↑' : ' ↓';
+  return red + ' % rouge ↑ · ' + blue + ' % bleu ↓. Aimantation d’ensemble ' + total + ' %' + direction;
+}
+
+const GUIDE_TEXTURE_CONTROLS = [
   {
-    id: 'limaille', short: 'Voir l’invisible', title: 'Le champ autour d’un aimant', level: 'Chapitre 1 · aucune notion requise', icon: '🧲',
-    summary: 'De la limaille et des boussoles pour dessiner le champ invisible d’un aimant.',
+    id: 'A', label: 'Échange A', format: v => frNum(v, 2) + ' pJ/m',
+    help: 'Quand A augmente, les flèches voisines s’orientent davantage ensemble. Les changements de direction deviennent plus progressifs.'
+  },
+  {
+    id: 'K', label: 'Anisotropie K', format: v => frNum(v, 0) + ' kJ/m³',
+    help: 'K positif favorise les deux sens de la verticale, ↑ et ↓. K négatif favorise les flèches couchées dans le plan du film.'
+  },
+  {
+    id: 'D', label: 'Interaction DMI D', format: v => frNum(v, 2) + ' mJ/m²',
+    help: 'D favorise un sens de rotation entre flèches voisines. Éloigne D de zéro pour voir si les bandes ou les bulles changent.'
+  },
+  {
+    id: 'demag', label: 'Champ démagnétisant',
+    help: 'L’aimantation du film crée ce champ, même si le champ extérieur vaut zéro. Il peut favoriser des flèches couchées ou des domaines d’orientations différentes.'
+  },
+  {
+    id: 'Bz', label: 'Champ extérieur', format: guideFieldLabel,
+    help: 'Tu appliques ce champ depuis l’extérieur. Vers le haut, il favorise le rouge ↑. Vers le bas, il favorise le bleu ↓.'
+  }
+].map(control => ({ ...SANDBOX_PARAMS.find(param => param.id === control.id), ...control }));
+
+const DOMAIN_INTRO = 'Imagine de minuscules aimants dans le matériau. Un domaine magnétique est une zone où ils pointent presque tous dans le même sens. La paroi est la transition entre deux domaines.';
+
+const DECOUVERTE = [
+  {
+    id: 'limaille', short: 'Voir l’invisible', icon: '🧲',
+    summary: 'Déplace les aimants et observe le champ avec de la limaille ou des boussoles.',
+    free: {
+      setup: { scene: 'bar', disp: 'filings' }, reset: 'reset', gesture: true,
+      caption: 'Fais glisser un aimant ou retourne-le. Les boussoles indiquent dans quel sens pointe le champ.',
+      controls: [
+        { id: 'scene', label: 'Disposition des aimants', options: [
+          ['bar', 'Un aimant'], ['attract', 'Nord face au sud'], ['repel', 'Nord face au nord']
+        ] },
+        { id: 'disp', label: 'Outil d’observation', options: [
+          ['filings', 'Limaille de fer'], ['compass', 'Petites boussoles'], ['lines', 'Lignes de champ']
+        ] }
+      ],
+      action: { id: 'flip', label: 'Retourner le premier aimant' }
+    },
     steps: [
       {
-        name: 'Ce que dessine la limaille',
-        intro: 'Un aimant agit à distance, même à travers l’air. Les grains de fer de la limaille s’orientent sous son action. Le bout rouge de l’aimant est son pôle nord (N), le bout bleu son pôle sud (S).',
-        do: [
-          { txt: 'Attrape l’aimant par le milieu et déplace-le dans l’image.', canvas: true },
-          { txt: 'Appuie sur « Retourner l’aimant ». Regarde bien la limaille avant et après.', actions: [{ label: 'Retourner l’aimant', act: 'flip' }] }
-        ],
-        canvas: true,
-        notice: 'Quand tu as retourné l’aimant, qu’est-ce qui a changé dans le dessin de la limaille ?',
-        choices: [
-          { t: 'Rien : les traits forment le même dessin qu’avant.', ok: true, fb: 'Exact, et c’est surprenant ! La limaille montre la direction du champ (la ligne), pas son sens (la flèche).' },
-          { t: 'Tous les traits ont fait un demi-tour.', ok: false, fb: 'Regarde encore : un trait de limaille n’a pas de pointe. Retourné, il est identique.' },
-          { t: 'La limaille s’est rassemblée au milieu de l’aimant.', ok: false, fb: 'Regarde encore : la limaille se concentre près des deux bouts, pas au milieu.' }
-        ],
-        explain: 'En chaque point, le champ magnétique a une direction et un sens, comme une flèche. Retourner l’aimant inverse le sens partout, mais garde les mêmes directions : la limaille ne voit pas la différence. Pour voir le sens, il faut des boussoles.',
+        name: 'Peux-tu repérer un aimant retourné ?',
+        question: 'Si tu retournes un aimant sur place, quel outil permet de voir que le champ a changé de sens ?',
+        choices: ['La limaille de fer', 'Les petites boussoles'],
+        answer: 1,
+        hint: 'Quel outil a une pointe qui peut se retourner ?',
+        observe: 'Les petites boussoles ont une pointe. La limaille dessine des traits.',
+        setup: { scene: 'bar', disp: 'compass' },
+        explain: 'La pointe d’une boussole indique le sens du champ. Elle fait un demi-tour quand on retourne l’aimant. Les traits de limaille gardent la même forme.',
         qty: ['B'],
-        limit: 'Les aimants sont représentés par deux pôles idéalisés dans un plan, pas par le calcul complet d’un aimant 3D.',
+        limit: 'Les pôles sont représentés dans un plan.',
         sources: ['openfields', 'hubert']
       },
       {
-        name: 'Le sens du champ : les boussoles',
-        intro: 'Une boussole est une petite aiguille aimantée, libre de tourner. Sa pointe rouge (son nord) se tourne dans le sens du champ, là où elle se trouve.',
-        do: [
-          { txt: 'Appuie sur « Afficher des boussoles ».', actions: [{ label: 'Afficher des boussoles', set: { scene: 'bar', disp: 'compass' } }] },
-          { txt: 'Regarde les boussoles près du bout rouge, puis près du bout bleu.', actions: [{ label: 'C’est regardé' }] },
-          { txt: 'Retourne l’aimant et regarde de nouveau les boussoles.', actions: [{ label: 'Retourner l’aimant', act: 'flip' }] }
-        ],
-        notice: 'Près des deux bouts de l’aimant, dans quel sens pointent les pointes rouges des boussoles ?',
-        choices: [
-          { t: 'Elles s’éloignent du bout rouge (N) et se tournent vers le bout bleu (S).', ok: true, fb: 'Oui. Et après le retournement, toutes les aiguilles ont fait demi-tour.' },
-          { t: 'Elles pointent toutes vers le haut de l’écran.', ok: false, fb: 'Regarde encore : chaque aiguille a sa propre direction, elle dépend de l’endroit.' },
-          { t: 'Elles pointent toutes vers le centre de l’aimant.', ok: false, fb: 'Regarde encore près du bout rouge : les aiguilles s’en écartent.' }
-        ],
-        explain: 'Hors de l’aimant, le champ sort du pôle nord et rentre par le pôle sud. On dessine des lignes de champ qui suivent ces aiguilles de proche en proche. Leur sens est une convention : celui où pointe le nord d’une boussole.',
+        name: 'Le pont de limaille',
+        question: 'Quels pôles faut-il placer face à face pour voir un pont de limaille entre deux aimants ?',
+        choices: ['Nord face au sud', 'Nord face au nord'],
+        answer: 0,
+        hint: 'Pense à ce que tu as observé lorsque les lignes traversaient l’espace entre les deux aimants.',
+        observe: 'Observe la forme des traits entre les deux aimants.',
+        setup: { scene: 'attract', disp: 'filings' },
+        explain: 'Entre un nord et un sud, les deux champs se renforcent et les traits traversent l’espace entre les pôles. Entre deux nords identiques, les champs se compensent au milieu.',
         qty: ['B'],
-        limit: 'Les lignes et les boussoles sont dessinées dans une coupe 2D. La densité des lignes est un choix de dessin, pas une mesure en teslas.',
-        sources: ['openfields', 'hubert']
-      },
-      {
-        name: 'Deux aimants face à face',
-        intro: 'Les champs de deux aimants s’ajoutent. Sur Android, le téléphone vibre quand deux faces opposées (N et S) se rapprochent. L’iPhone, lui, ne permet pas de vibrer depuis une page web.',
-        do: [
-          { txt: 'Appuie sur « Nord face au sud », puis rapproche les deux aimants avec le doigt.', actions: [{ label: 'Nord face au sud', set: { scene: 'attract', disp: 'filings' } }], canvas: true },
-          { txt: 'Appuie sur « Nord face au nord ». Regarde la limaille au milieu.', actions: [{ label: 'Nord face au nord', set: { scene: 'repel', disp: 'filings' } }] }
-        ],
-        canvas: true,
-        notice: 'Avec deux pôles nord face à face, que fait la limaille au milieu ?',
-        choices: [
-          { t: 'Elle part sur les côtés, et au centre les traits sont désordonnés.', ok: true, fb: 'Oui. Au centre, les deux champs s’opposent et s’annulent presque : c’est un point neutre.' },
-          { t: 'Elle forme un pont tout droit d’un aimant à l’autre.', ok: false, fb: 'Ça, c’est le cas nord face au sud. Reviens à « Nord face au nord » et compare.' },
-          { t: 'C’est exactement le même dessin que nord face au sud.', ok: false, fb: 'Compare les deux boutons : au milieu, le dessin change beaucoup.' }
-        ],
-        explain: 'Nord face au sud : les lignes passent d’un aimant à l’autre, les aimants s’attirent. Nord face au nord : les lignes se repoussent, un point neutre apparaît entre eux, les aimants se repoussent. Le champ total est la somme des deux champs.',
-        qty: ['B'],
-        limit: 'La force réelle entre deux aimants dépend de leur forme 3D et de leur matériau. Ici, on ne dessine que le champ.',
+        limit: 'Ce dessin montre l’orientation du champ. La force entre aimants n’est pas calculée ici.',
         sources: ['openfields', 'hubert']
       }
     ]
   },
   {
-    id: 'wall', short: 'Domaines et parois', title: 'À l’intérieur d’un aimant : domaines et paroi', level: 'Chapitre 2 · aimantation, échange, anisotropie', icon: '↕️',
-    summary: 'Descends à l’échelle du nanomètre : des zones aimantées, et la frontière qui les sépare.',
+    id: 'wall', short: 'Domaines et parois', icon: '↕',
+    summary: 'Repère les groupes de flèches et fais bouger leur frontière.',
+    free: {
+      setup: { Bz: 0, A: 20, K: 350, D: 0 }, reset: 'reset', legend: true,
+      intro: DOMAIN_INTRO,
+      caption: 'Au départ, le domaine rouge pointe vers le haut ↑ et le bleu vers le bas ↓. Dans la bande claire qui les sépare, les petits aimants changent progressivement d’orientation.',
+      controls: [
+        { id: 'Bz', label: 'Champ magnétique', min: -40, max: 40, step: 2, format: guideFieldLabel },
+        { id: 'A', label: 'Accord entre voisins (échange)', min: 8, max: 30, step: 1, format: v => frNum(v, 0) + ' pJ/m' },
+        { id: 'K', label: 'Préférence pour la verticale (↑ ou ↓)', min: 150, max: 800, step: 10, format: v => frNum(v, 0) + ' kJ/m³' }
+      ],
+      action: { id: 'reset', label: 'Remettre la paroi au départ' },
+      measure: s => s.xw === null ? guideWallRedArea(s) : guideWallWidth(s) + ' · ' + guideWallRedArea(s)
+    },
     steps: [
       {
-        name: 'C’est quoi, un domaine ?',
-        intro: 'Zoomons dans un aimant. Chaque électron se comporte comme un minuscule aimant : son spin. Une région où les spins pointent tous dans le même sens s’appelle un domaine. Ici, un ruban de 480 nm, environ 150 fois plus fin qu’un cheveu. En haut, vu de dessus : rouge = aimantation vers le haut (↑), bleu = vers le bas (↓). En bas, vu de côté : une flèche par petit groupe de spins.',
-        do: [
-          { txt: 'Appuie sur « Champ nul » pour que rien ne bouge.', actions: [{ label: 'Champ nul', set: { Bz: 0, A: 15, K: 500 }, act: 'reset' }] },
-          { txt: 'Repère les zones de couleur dans la bande du haut.', actions: [{ label: 'C’est repéré' }] }
-        ],
-        notice: 'Combien de domaines vois-tu ?',
-        choices: [
-          { t: 'Deux : un rouge (↑) à gauche, un bleu (↓) à droite.', ok: true, fb: 'Oui. La petite zone blanche entre les deux est leur frontière.' },
-          { t: 'Un seul, tout rouge.', ok: false, fb: 'Regarde toute la bande : la droite est bleue.' },
-          { t: 'Des dizaines de petites zones.', ok: false, fb: 'Regarde encore : il n’y a que deux grandes zones.' }
-        ],
-        explain: 'Chaque couleur est un domaine : dans le rouge, l’aimantation pointe vers le haut, dans le bleu vers le bas. Un domaine contient des milliards de spins qui pointent ensemble. La frontière entre deux domaines s’appelle une paroi.',
+        name: 'Repère les domaines',
+        intro: DOMAIN_INTRO,
+        question: 'Combien de domaines vois-tu dans le ruban au début de l’expérience ?',
+        choices: ['Deux, un rouge ↑ et un bleu ↓', 'Un seul, car c’est un seul matériau'],
+        answer: 0,
+        hint: 'Compte les zones où les flèches pointent ensemble. La bande claire est la transition entre elles.',
+        observe: 'Les flèches sous la bande montrent le sens de l’aimantation à chaque endroit.',
+        setup: { Bz: 0, A: 30, K: 350 },
+        reset: 'reset',
+        legend: true,
+        explain: 'Un même matériau peut contenir plusieurs domaines. Ici, le rouge pointe vers le haut et le bleu vers le bas. Dans la paroi, les petits aimants tournent progressivement de l’un à l’autre.',
         qty: ['m'],
-        limit: 'Le ruban est modélisé en 1D (une ligne de cellules de 3 nm). Rouge et bleu sont des couleurs de dessin, pas la couleur du métal.',
+        limit: 'Les flèches et les couleurs représentent l’aimantation locale.',
         sources: ['hubert', 'nistdw']
       },
       {
-        name: 'La paroi : un virage en douceur',
-        intro: 'Regarde les flèches du bas, au niveau de la paroi. Elles ne passent pas d’un coup de ↑ à ↓ : chacune est un peu plus penchée que sa voisine. Deux grandeurs règlent la longueur de ce virage.',
-        do: [
-          { txt: 'Appuie sur « Échange fort » (A = 30). Compte à peu près les flèches penchées.', actions: [{ label: 'Échange fort', set: { A: 30, K: 500, Bz: 0 }, act: 'reset' }] },
-          { txt: 'Puis sur « Échange faible » (A = 8). Compare.', actions: [{ label: 'Échange faible', set: { A: 8, K: 500, Bz: 0 }, act: 'reset' }] },
-          { txt: 'Garde A et fais glisser le curseur de l’anisotropie K vers la droite.', focus: 'K' }
-        ],
-        focus: 'K',
-        notice: 'Qu’est-ce qui a rendu la paroi plus large ?',
-        choices: [
-          { t: 'Un échange A plus fort.', ok: true, fb: 'Oui. Et une anisotropie K plus forte l’a rendue plus étroite.' },
-          { t: 'Une anisotropie K plus forte.', ok: false, fb: 'Regarde la largeur affichée sous le panneau : quand K monte, elle diminue.' },
-          { t: 'Rien : la paroi garde toujours la même largeur.', ok: false, fb: 'Regarde la largeur affichée : elle change avec A et avec K.' }
-        ],
-        explain: 'L’échange A oblige chaque spin à rester presque parallèle à ses voisins. Un retournement brutal coûterait beaucoup d’énergie d’échange : le virage s’étale. L’anisotropie K, elle, favorise l’orientation suivant un axe, ici vertical : les spins veulent être ↑ ou ↓. Dans la paroi, ils sont de travers, ce que K pénalise : la paroi se resserre. Le compromis donne une largeur d’environ √(A/K), quelques nanomètres.',
+        name: 'La largeur de la paroi',
+        intro: 'K mesure la préférence pour la verticale (↑ ou ↓). A mesure la tendance des voisins à s’orienter ensemble.',
+        question: 'Quel réglage peut rendre la paroi plus étroite ?',
+        choices: ['Augmenter K, la préférence pour la verticale', 'Augmenter A, l’accord entre voisins'],
+        answer: 0,
+        hint: 'Pour rendre la paroi plus étroite, il faut réduire la place occupée par les flèches inclinées.',
+        observe: 'Les flèches inclinées se trouvent dans la bande claire.',
+        setup: { Bz: 0, A: 30, K: 350 },
+        reset: 'reset',
+        legend: true,
+        explain: 'Augmenter K favorise les flèches verticales et resserre la zone inclinée. Augmenter A étale la transition pour que deux voisines aient des directions plus proches.',
         qty: ['A', 'K'],
-        limit: 'Δ = √(A/K) est l’estimation d’une paroi 1D idéale. Une vraie paroi dépend aussi de la forme de l’échantillon et du champ démagnétisant.',
-        sources: ['nistdw', 'hubert']
+        limit: 'La largeur affichée est une estimation pour une paroi idéalisée à une dimension.',
+        sources: ['hubert', 'nistdw']
       },
       {
-        name: 'Pousser la paroi avec un champ',
-        intro: 'On applique un champ B perpendiculaire au ruban. B > 0 pointe vers le haut, comme le rouge. Il favorise les spins qui pointent dans son sens.',
-        do: [
-          { txt: 'Appuie sur « Champ +40 mT » et suis la paroi (trait pointillé doré).', actions: [{ label: 'Champ +40 mT', set: { Bz: 40, A: 15, K: 500 }, act: 'reset' }] },
-          { txt: 'Puis sur « Champ −40 mT ».', actions: [{ label: 'Champ −40 mT', set: { Bz: -40, A: 15, K: 500 }, act: 'reset' }] }
-        ],
-        focus: 'Bz',
-        notice: 'Avec +40 mT, qu’a fait la paroi ?',
-        choices: [
-          { t: 'Elle a glissé vers la droite : le domaine rouge a grandi.', ok: true, fb: 'Oui. Et avec −40 mT, elle repart vers la gauche : le bleu grandit.' },
-          { t: 'Elle a glissé vers la gauche : le domaine bleu a grandi.', ok: false, fb: 'Refais « Champ +40 mT » : c’est le rouge, aligné avec le champ, qui gagne.' },
-          { t: 'Elle n’a pas bougé.', ok: false, fb: 'Refais l’essai et regarde le trait doré quelques secondes.' }
-        ],
-        explain: 'Un spin aligné avec le champ a une énergie plus basse. Le domaine aligné avec B grandit donc en repoussant la paroi. Plus le champ est fort, plus la paroi va vite : des dizaines de mètres par seconde, sur des nanomètres.',
+        name: 'Le champ et les domaines',
+        question: 'Quel champ extérieur aide le domaine rouge (↑) à grandir ?',
+        choices: ['Un champ vers le haut ↑', 'Un champ vers le bas ↓'],
+        answer: 0,
+        hint: 'Pense au champ qui pointe dans le même sens que le domaine rouge.',
+        observe: 'Le trait doré repère la paroi entre les deux domaines.',
+        setup: { Bz: 0, A: 15, K: 500 },
+        reset: 'reset',
+        legend: true,
+        explain: 'Le champ favorise le domaine orienté dans le même sens que lui. Vers le haut il fait grandir le rouge, vers le bas il fait grandir le bleu.',
         qty: ['B'],
-        limit: 'Chaîne 1D sans défaut et sans température : une vraie paroi est freinée par les défauts du matériau (chapitre 4).',
+        limit: 'Ce ruban idéal ne contient ni défauts ni agitation thermique.',
         sources: ['walker', 'nistdw']
       }
     ]
   },
   {
-    id: 'compass', short: 'Comment l’aimantation bouge', title: 'Une toupie magnétique', level: 'Chapitre 3 · précession et frottement', icon: '🌀',
-    summary: 'Un aimant ne s’aligne pas tout de suite : il tourne d’abord autour du champ, comme une toupie.',
+    id: 'labyrinthe', short: 'Bandes et bulles', icon: '▧',
+    summary: 'Explore les cinq réglages du bac à sable et observe leurs effets sur les domaines.',
+    free: {
+      mode: 'sandbox', setup: { mat: 'ircopt' }, reset: 'reset', legend: true,
+      caption: 'Rouge ↑ et bleu ↓ montrent les deux sens de l’aimantation verticale. Les zones claires ont une aimantation presque couchée dans le film. Change un réglage et observe comment le motif évolue.',
+      controls: GUIDE_TEXTURE_CONTROLS,
+      action: { id: 'reset', label: 'Relancer le motif avec ces réglages' },
+      measure: guideVerticalMagnetization,
+      qty: ['A', 'K', 'D', 'demag', 'B']
+    },
     steps: [
       {
-        name: 'Un aimant qui tourne',
-        intro: 'Voici un seul tout petit aimant, vu en 3D. La flèche blanche montre où il pointe, la flèche jaune montre le champ B. La boule représente toutes les directions possibles.',
-        do: [
-          { txt: 'Appuie sur « Recommencer » et suis la pointe de la flèche blanche.', actions: [{ label: 'Recommencer', set: { alpha: 0.1, B: 100 }, act: 'reset' }] },
-          { txt: 'Fais tourner la boule avec le doigt pour la regarder d’en haut.', canvas: true }
-        ],
-        canvas: true,
-        notice: 'Comment la flèche blanche rejoint-elle la flèche jaune ?',
-        choices: [
-          { t: 'En tournant autour d’elle, en spirale.', ok: true, fb: 'Oui, comme une toupie penchée qui tourne autour de la verticale.' },
-          { t: 'Tout droit, comme une aiguille qui tombe.', ok: false, fb: 'Regarde la trace colorée : elle dessine une spirale.' },
-          { t: 'Elle s’en éloigne.', ok: false, fb: 'Attends un peu : la spirale se resserre vers la flèche jaune.' }
-        ],
-        explain: 'Le champ ne tire pas l’aimantation tout droit : il la fait tourner autour de lui. C’est la précession. Elle est très rapide : environ 28 milliards de tours par seconde pour un champ de 1 tesla.',
-        qty: ['B', 'm'],
-        limit: 'Un seul aimant uniforme (macrospin) : dans un vrai matériau, chaque région précesse en interagissant avec ses voisines.',
-        sources: ['gilbert', 'ubdyn']
+        name: 'Le rôle de la DMI',
+        question: 'Quelle préférence le réglage D ajoute-t-il aux petits aimants voisins ?',
+        choices: ['Un sens de rotation quand leur orientation change', 'Un sens pour le champ extérieur'],
+        answer: 0,
+        hint: 'Pense aux flèches qui tournent en passant d’un domaine à l’autre.',
+        observe: 'Les bords des zones colorées se trouvent là où les petits aimants changent progressivement d’orientation.',
+        setup: { Bz: 0, auto: false, D: 1.9 },
+        reset: 'demag',
+        legend: true,
+        explain: 'La DMI favorise un sens de rotation entre voisins. Elle peut contribuer à la formation de bandes ou de bulles. Le champ extérieur a son propre réglage.',
+        qty: ['D', 'B'],
+        limit: 'Les motifs dépendent aussi des autres réglages et de l’état de départ.',
+        sources: ['rohart', 'moreau']
       },
       {
-        name: 'Le frottement α',
-        intro: 'Si rien ne la freinait, la rotation ne s’arrêterait jamais. Ce qui la freine s’appelle le frottement, ou amortissement, noté α.',
-        do: [
-          { txt: 'Appuie sur « Sans frottement » (α = 0).', actions: [{ label: 'Sans frottement', set: { alpha: 0 }, act: 'kick' }] },
-          { txt: 'Puis sur « Frottement fort » (α = 1).', actions: [{ label: 'Frottement fort', set: { alpha: 1 }, act: 'kick' }] }
-        ],
-        focus: 'alpha',
-        notice: 'Sans frottement, que fait la flèche blanche ?',
-        choices: [
-          { t: 'Elle tourne sans fin autour du champ.', ok: true, fb: 'Oui. Avec α = 1, au contraire, elle file presque droit vers le champ.' },
-          { t: 'Elle s’aligne tout de suite.', ok: false, fb: 'Refais « Sans frottement » : la spirale ne se resserre plus.' },
-          { t: 'Elle s’arrête au hasard.', ok: false, fb: 'Regarde quelques secondes : elle continue de tourner.' }
-        ],
-        explain: 'α mesure les pertes d’énergie de l’aimantation, vers le réseau d’atomes. Grand α : alignement rapide. Petit α : longue rotation. Ce frottement compte pour écrire vite une mémoire, ou pour faire voyager des ondes magnétiques loin.',
-        qty: ['alpha'],
-        limit: 'α est ici une constante. Dans un vrai matériau, il dépend de la composition et des interfaces.',
-        sources: ['gilbert']
+        name: 'Deux champs, deux origines',
+        question: 'Un champ démagnétisant peut-il exister quand le champ extérieur vaut zéro ?',
+        choices: ['Non, les deux champs disparaissent ensemble', 'Oui, l’aimantation du film le crée'],
+        answer: 1,
+        hint: 'Un aimant crée son propre champ. Les petits aimants du film aussi.',
+        observe: 'Le film contient des régions aimantées dans des sens différents.',
+        setup: { Bz: 0, auto: false, D: 1.9 },
+        reset: 'demag',
+        legend: true,
+        explain: 'Le matériau aimanté produit le champ démagnétisant. Il peut favoriser des domaines d’orientations différentes ou des flèches couchées. Le champ extérieur est celui qu’on applique au matériau.',
+        qty: ['demag', 'B'],
+        limit: 'La forme du matériau compte dans le calcul du champ démagnétisant.',
+        sources: ['hubert', 'ubenergy']
       }
     ]
   },
   {
-    id: 'paroi_pin', short: 'Défauts et ancrage', title: 'Pourquoi une paroi s’arrête', level: 'Chapitre 4 · défauts', icon: '🧱',
-    summary: 'Une piste lisse, puis des entailles, puis des grains : ce qui retient une paroi.',
+    id: 'curie', short: 'L’aimant et la chaleur', icon: '♨', optional: true,
+    summary: 'Chauffe, refroidis et observe comment les orientations s’additionnent ou se compensent.',
+    free: {
+      setup: { T: 1, h: 0 }, reset: 'up', legend: true,
+      caption: 'Chaque case rouge pointe vers le haut et chaque bleue vers le bas. La chaleur les fait changer de sens plus souvent. Quand les deux couleurs s’équilibrent, l’aimantation d’ensemble est proche de zéro.',
+      controls: [
+        { id: 'T', label: 'Température', min: 0.7, max: 4.2, step: 0.1, format: guideCurieTemperature },
+        { id: 'h', label: 'Champ magnétique', min: -0.9, max: 0.9, step: 0.05, format: guideCurieField }
+      ],
+      action: { id: 'up', label: 'Tout orienter vers le haut' },
+      measure: guideCurieMeasure
+    },
     steps: [
       {
-        name: 'Une piste lisse',
-        intro: 'Une piste magnétique vue de dessus. Rouge : aimantation vers toi (↑). Bleu : vers le fond (↓). Le trait doré est la paroi entre les deux domaines.',
-        do: [
-          { txt: 'Appuie sur « Piste lisse · +20 mT ».', actions: [{ label: 'Piste lisse · +20 mT', set: { notch: 0, dis: 0, Bz: 20, T: 0, u: 0 }, act: 'reset' }] },
-          { txt: 'Observe le trait doré une dizaine de secondes.', actions: [{ label: 'C’est observé' }] }
-        ],
-        notice: 'Sur cette piste sans défaut, avec 20 mT, que fait la paroi ?',
-        choices: [
-          { t: 'Elle avance régulièrement vers la droite.', ok: function (s) { return s.xw > 80e-9 || s.exited; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Elle reste bloquée au départ.', ok: function (s) { return s.xw <= 80e-9 && !s.exited; }, fb: '' },
-          { t: 'Elle recule vers la gauche.', ok: false, fb: '' }
-        ],
-        explain: 'Le champ favorise le domaine rouge, qui pousse la paroi. Sans obstacle, rien ne la retient : même un petit champ la fait avancer.',
-        qty: ['B'],
-        limit: 'Couche 2D très mince, anisotropie effective, sans température ici.',
-        sources: ['walker', 'metaxas']
-      },
-      {
-        name: 'Des entailles dans la piste',
-        intro: 'Une entaille est un petit creux sur le bord de la piste. Ce sont les zones vides numérotées 1, 2, 3 sur l’image. C’est un premier type de défaut.',
-        do: [
-          { txt: 'Appuie sur « Entailles · +20 mT » et attends que la paroi arrive à l’entaille 1.', actions: [{ label: 'Entailles · +20 mT', set: { notch: 24, dis: 0, Bz: 20, T: 0, u: 0 }, act: 'reset' }] },
-          { txt: 'Monte doucement le champ avec le curseur.', focus: 'Bz' }
-        ],
-        focus: 'Bz',
-        notice: 'Qu’a fait la paroi à l’entaille 1 ?',
-        choices: [
-          { t: 'Elle s’y est arrêtée, puis elle est repartie quand le champ a monté.', ok: function (s) { return typeof s.dep[0] === 'number'; }, fb: 'C’est bien ce qu’a calculé la simulation. Le champ de décrochage s’affiche dans les mesures.' },
-          { t: 'Elle y est encore bloquée.', ok: function (s) { return s.dep[0] === null && s.pinnedAt === 0; }, fb: 'C’est bien ce qu’a calculé la simulation. Monte encore le champ pour la décrocher.' },
-          { t: 'Elle l’a traversée sans s’arrêter.', ok: function (s) { return s.dep[0] === 'libre'; }, fb: 'C’est bien ce qu’a calculé la simulation : à 20 mT, cette entaille ne suffit pas. Essaie un champ plus faible.' }
-        ],
-        explain: 'Dans l’entaille, la piste est plus étroite : la paroi y est plus courte, donc elle coûte moins d’énergie. Elle y tombe comme une bille dans un creux. Pour l’en sortir, il faut un champ plus fort : le champ de décrochage.',
-        qty: ['def'],
-        limit: 'Le champ de décrochage dépend de la forme de l’entaille et du matériau. Ce n’est pas une valeur universelle.',
-        sources: ['gao', 'hayashi']
-      },
-      {
-        name: 'Le désordre d’un vrai film',
-        intro: 'Un vrai film magnétique est fait de grains de quelques nanomètres. D’un grain à l’autre, l’anisotropie K change un peu. Les traits fins sur l’image dessinent ces grains. Les grains teintés en jaune sont plus « mous » que les autres.',
-        do: [
-          { txt: 'Appuie sur « Grains irréguliers · +20 mT ».', actions: [{ label: 'Grains irréguliers · +20 mT', set: { notch: 0, dis: 25, Bz: 20, T: 0, u: 0 }, act: 'newdis' }] },
-          { txt: 'Monte le champ par petits pas, en regardant la forme du trait doré.', focus: 'Bz' }
-        ],
-        focus: 'Bz',
-        notice: 'Comment la paroi avance-t-elle maintenant ?',
-        choices: [
-          { t: 'De façon irrégulière : elle se tord, s’arrête, puis repart.', ok: true, fb: 'Oui. Chaque grain la retient plus ou moins.' },
-          { t: 'Bien droite, toujours à la même vitesse.', ok: false, fb: 'Regarde la forme de la paroi : elle n’est plus droite.' },
-          { t: 'Elle ne bouge jamais, quel que soit le champ.', ok: false, fb: 'Monte encore le champ : au-delà d’un seuil, elle repart.' }
-        ],
-        explain: 'Chaque grain retient un bout de paroi, plus ou moins fort. La paroi se tord et avance par sauts. C’est ce qu’on voit au microscope dans les films de cobalt-platine (Metaxas 2007). Avec de la température, elle peut même avancer lentement sous le seuil.',
-        qty: ['def', 'K'],
-        limit: 'Les grains sont tirés au hasard : ce n’est pas la microstructure mesurée d’un échantillon réel.',
-        sources: ['metaxas', 'gao']
-      }
-    ]
-  },
-  {
-    id: 'labyrinthe', short: 'Labyrinthes et bulles', title: 'Des bandes qui deviennent des bulles', level: 'Chapitre 5 · interaction DMI', icon: '🫧',
-    summary: 'Un film forme tout seul un labyrinthe. Monte le champ : les bandes se coupent en bulles.',
-    steps: [
-      {
-        name: 'Un motif qui apparaît tout seul',
-        intro: 'Voici un film magnétique de 256 nm de côté, vu de dessus. Rouge : l’aimantation sort de l’écran, vers toi. Bleu : elle rentre dans l’écran. On part d’un désordre complet.',
-        do: [
-          { txt: 'Appuie sur « Désordre complet ».', actions: [{ label: 'Désordre complet', set: { Bz: 0, auto: false, D: 1.9 }, act: 'demag' }] },
-          { txt: 'Attends que le motif ne change presque plus.', actions: [{ label: 'Le motif est stable' }] }
-        ],
-        notice: 'Quel motif s’est formé ?',
-        choices: [
-          { t: 'Des bandes sinueuses rouges et bleues, comme un labyrinthe.', ok: function (s) { return s.phase === 'labyrinthe' || s.phase === 'bandes + bulles'; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Des ronds bleus isolés.', ok: function (s) { return s.phase === 'bulles'; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Une seule couleur partout.', ok: function (s) { return s.phase === 'saturé'; }, fb: 'C’est bien ce qu’a calculé la simulation.' }
-        ],
-        explain: 'Trois effets se disputent. L’anisotropie K veut ↑ ou ↓. L’échange A veut des voisins pareils. L’interaction DMI, notée D, favorise une rotation dans un sens précis. Quand D est assez fort, tourner en bandes coûte moins cher que rester uniforme. La largeur des bandes est réglée par le rapport A/D.',
-        qty: ['D'],
-        limit: 'Le motif dépend des réglages et du hasard de départ : il n’est pas garanti pour toutes les valeurs.',
-        sources: ['jagla', 'moreau']
-      },
-      {
-        name: 'Monter le champ',
-        intro: 'Le champ B pointe maintenant vers toi (symbole ⊙), dans le même sens que le rouge. Il favorise donc le rouge.',
-        do: [
-          { txt: 'Appuie trois fois sur « +10 mT », en attendant que le motif se calme entre deux appuis.', actions: [{ label: '+10 mT', act: 'up' }], times: 3 },
-          { txt: 'Continue jusqu’à environ 100 mT avec le curseur.', focus: 'Bz' }
-        ],
-        focus: 'Bz',
-        notice: 'Que sont devenues les zones bleues ?',
-        choices: [
-          { t: 'Elles ont maigri, se sont coupées, et certaines sont devenues des ronds.', ok: function (s) { return s.maxBub >= 1; }, fb: 'C’est bien ce qu’a calculé la simulation : ces ronds sont des bulles magnétiques.' },
-          { t: 'Elles ont maigri, mais sont restées des bandes.', ok: function (s) { return s.maxBub === 0; }, fb: 'C’est bien ce qu’a calculé la simulation. Monte encore un peu le champ.' },
-          { t: 'Elles ont grossi et envahi le film.', ok: function (s) { return s.mz < -0.2; }, fb: '' }
-        ],
-        explain: 'Le champ rend le bleu plus coûteux : les domaines bleus rétrécissent. Une bande trop fine se coupe, et les morceaux se referment en ronds : des bulles magnétiques. Leur taille dépend de B et de D.',
-        qty: ['B', 'D'],
-        limit: 'Une bulle n’est pas forcément un skyrmion : il faut regarder sa structure interne et sa charge topologique Q.',
-        sources: ['jagla', 'rohart']
-      },
-      {
-        name: 'Jusqu’à tout effacer',
-        intro: 'Continuons à monter le champ.',
-        do: [
-          { txt: 'Appuie sur « Champ fort : 250 mT ».', actions: [{ label: 'Champ fort : 250 mT', set: { Bz: 250 } }] },
-          { txt: 'Attends que le motif ne change presque plus.', actions: [{ label: 'Le motif est stable' }] }
-        ],
-        notice: 'À 250 mT, que reste-t-il ?',
-        choices: [
-          { t: 'Presque tout est rouge : les bulles ont disparu.', ok: function (s) { return s.mz > 0.97; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Quelques bulles résistent encore.', ok: function (s) { return s.mz <= 0.97 && s.stat && s.stat.nBub > 0; }, fb: 'C’est bien ce qu’a calculé la simulation. Ces bulles sont protégées par une barrière d’énergie.' },
-          { t: 'Le labyrinthe est revenu.', ok: function (s) { return s.phase === 'labyrinthe'; }, fb: '' }
-        ],
-        explain: 'Assez fort, le champ gagne : l’état uniforme rouge devient le plus stable. Une bulle peut résister un moment : défaire son tourbillon demande de franchir une barrière d’énergie. Pour recommencer, appuie sur « Désaimanter » dans les réglages.',
-        qty: ['B'],
-        limit: 'Il faut laisser le calcul relaxer : un curseur déplacé ne donne pas tout de suite l’état d’équilibre.',
-        sources: ['jagla', 'moreau']
-      }
-    ]
-  },
-  {
-    id: 'curie', short: 'La chaleur désordonne', title: 'Chauffer un aimant', level: 'Chapitre 6 · température', icon: '🌡️',
-    summary: 'Chauffe, refroidis, et regarde l’ordre magnétique disparaître puis revenir.',
-    steps: [
-      {
-        name: 'Chauffer doucement',
-        intro: 'Chaque case est un petit aimant, un spin : rouge vers le haut, bleu vers le bas. Les voisins aiment pointer pareil. La température les agite au hasard. Ici, elle est en unités réduites : T* ≈ 2,27 est la température critique.',
-        do: [
-          { txt: 'Appuie sur « Tout aligner, froid » (T* = 1).', actions: [{ label: 'Tout aligner, froid', set: { T: 1, h: 0 }, act: 'up' }] },
-          { txt: 'Fais monter doucement la température avec le curseur, jusqu’à 3,5. Regarde la valeur |M| affichée.', focus: 'T', until: function (s) { return s.p.T >= 3; } }
-        ],
-        focus: 'T',
-        notice: 'En chauffant, qu’est-il arrivé ?',
-        choices: [
-          { t: 'Vers T* ≈ 2,3, l’ordre s’est effondré : rouge et bleu mélangés, |M| proche de 0.', ok: function (s) { return s.p.T > 2.4 && s.obs.A < 0.35; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Rien : tout est resté rouge.', ok: function (s) { return s.obs.A > 0.8; }, fb: 'C’est bien ce qu’a calculé la simulation. Monte encore la température.' },
-          { t: 'Tout est devenu bleu.', ok: false, fb: '' }
-        ],
-        explain: 'L’agitation retourne des spins au hasard. Tant qu’elle est faible, l’accord entre voisins l’emporte. Au-delà d’une température critique, la température de Curie T_C, l’aimantation d’ensemble disparaît. Pour le fer, T_C ≈ 770 °C.',
-        qty: ['T'],
-        limit: 'Modèle d’Ising 2D : des spins à deux états sur une grille. Ce n’est pas un calcul quantitatif du fer.',
+        name: 'L’effet de la chaleur',
+        intro: 'Chaque case montre le sens d’un petit aimant. Le rouge pointe vers le haut et le bleu vers le bas.',
+        question: 'Pourquoi l’aimantation d’ensemble peut-elle diminuer quand on chauffe sans appliquer de champ ?',
+        choices: ['Les petits aimants pointent tous plus fortement vers le haut', 'Davantage de petits aimants pointent dans des sens opposés et se compensent'],
+        answer: 1,
+        hint: 'Un petit aimant ↑ et un petit aimant ↓ ont des effets qui se compensent.',
+        observe: 'Une grille avec autant de rouge que de bleu a une aimantation d’ensemble proche de zéro.',
+        setup: { T: 3.7, h: 0 },
+        reset: 'random',
+        legend: true,
+        explain: 'La chaleur rend les changements d’orientation plus fréquents. Quand les deux sens s’équilibrent, leurs contributions se compensent. Au-dessus de la température de Curie, l’aimantation spontanée disparaît dans ce modèle sans champ appliqué.',
+        qty: ['T', 'm'],
+        limit: 'Dans les unités de ce modèle d’Ising, le seuil de Curie se situe vers 2,27.',
         sources: ['onsager', 'metropolis']
       },
       {
-        name: 'Refroidir : lentement ou d’un coup',
-        intro: 'Maintenant, on refroidit. Deux façons : lentement, ou d’un coup (une trempe).',
-        do: [
-          { txt: 'Appuie sur « Refroidir lentement » et attends la fin.', actions: [{ label: 'Refroidir lentement', act: 'anneal' }] },
-          { txt: 'Puis sur « Désordre + trempe brutale ».', actions: [{ label: 'Désordre + trempe brutale', act: 'quench' }] }
-        ],
-        notice: 'Juste après la trempe brutale, à quoi ressemble l’aimant ?',
-        choices: [
-          { t: 'Des zones rouges et des zones bleues : des domaines.', ok: function (s) { return s.obs.A < 0.9; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Tout d’une seule couleur, comme après le refroidissement lent.', ok: function (s) { return s.obs.A >= 0.9; }, fb: 'C’est bien ce qu’a calculé la simulation.' }
-        ],
-        explain: 'En refroidissant, l’ordre revient, mais région par région : chacune choisit son camp. Lentement, tout le monde a le temps de s’accorder. D’un coup, il reste des domaines. La chaleur affaiblit aussi la préférence d’axe K. Les disques durs récents s’en servent pour écrire (voir l’Application).',
-        qty: ['T'],
-        limit: 'Le temps de calcul n’est pas un temps réel : on compare seulement des vitesses de refroidissement.',
+        name: 'Retrouve une aimantation',
+        intro: 'Après le refroidissement, un champ peut aider les petits aimants à s’accorder dans un sens.',
+        question: 'Quel champ aide la grille à devenir surtout bleue (↓) ?',
+        choices: ['Un champ vers le haut ↑', 'Un champ vers le bas ↓'],
+        answer: 1,
+        hint: 'Cherche le champ qui pointe dans le même sens que les cases bleues.',
+        observe: 'Le bleu et le rouge indiquent les deux sens possibles de l’aimantation.',
+        setup: { T: 1.5, h: 0 },
+        reset: 'random',
+        legend: true,
+        explain: 'Quand le matériau refroidit, les petits aimants voisins s’alignent plus facilement. Le champ vers le bas favorise le bleu. Le sens qui domine donne celui de l’aimantation d’ensemble.',
+        qty: ['B', 'T'],
+        limit: 'La vitesse de l’animation ne donne pas une durée de refroidissement réelle.',
         sources: ['onsager', 'metropolis']
-      }
-    ]
-  },
-  {
-    id: 'disk', app: true, short: 'Le disque dur', title: 'Écrire, garder, chauffer', level: 'Application', icon: '💾',
-    summary: 'Le défi des ingénieurs : des bits plus petits qui n’oublient pas.',
-    steps: [
-      {
-        name: 'Des grains trop petits oublient',
-        intro: 'Ton mot est écrit en 96 bits, de 5 grains chacun. Le temps est accéléré : 1 s ici = 1 an. Le petit dessin montre la barrière d’énergie d’un grain.',
-        do: [
-          { txt: 'Appuie sur « Écrire BONJOUR, grains de 9 nm ». Attends quelques « années ».', actions: [{ label: 'Écrire BONJOUR, grains de 9 nm', set: { word: 'BONJOUR', mat: 'hdd', d: 9, T: 25, clock: 'year', laser: false }, act: 'write' }] },
-          { txt: 'Puis « Réécrire avec des grains de 4 nm ». Attends encore.', actions: [{ label: 'Réécrire avec des grains de 4 nm', set: { d: 4 }, act: 'write' }] }
-        ],
-        barrier: true,
-        notice: 'Avec des grains de 4 nm, que devient le mot ?',
-        choices: [
-          { t: 'Il s’abîme : des lettres changent toutes seules.', ok: function (s) { return s.correct < 96; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Il reste intact, comme avec 9 nm.', ok: function (s) { return s.correct === 96; }, fb: 'C’est bien ce qu’a calculé la simulation.' }
-        ],
-        explain: 'Pour qu’un grain se retourne, il doit franchir une barrière d’énergie K·V : K est l’anisotropie, V le volume du grain. L’agitation thermique donne des coups d’énergie de l’ordre de k_BT. Un grain plus petit a une barrière plus basse : la chaleur finit par la franchir. Pour garder un bit dix ans, il faut K·V environ 40 à 60 fois plus grand que k_BT.',
-        qty: ['K', 'T'],
-        limit: 'Loi de Néel–Arrhenius simplifiée, temps d’essai 1 ns : ce n’est pas la prédiction d’un disque commercial.',
-        sources: ['weller', 'brown']
-      },
-      {
-        name: 'Plus dur… trop dur',
-        intro: 'Solution des ingénieurs : un matériau plus dur, le FePt, dont l’anisotropie K est environ 13 fois plus forte. Regarde la barrière.',
-        do: [
-          { txt: 'Appuie sur « FePt, grains de 4 nm, sans laser ».', actions: [{ label: 'FePt, grains de 4 nm, sans laser', set: { mat: 'hamr', d: 4, T: 25, laser: false }, act: 'write' }] }
-        ],
-        barrier: true,
-        notice: 'Le mot a-t-il été écrit ?',
-        choices: [
-          { t: 'Non : la tête n’a pas réussi à retourner les grains.', ok: function (s) { return !s.writeOk; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Oui, sans problème.', ok: function (s) { return s.writeOk; }, fb: 'C’est bien ce qu’a calculé la simulation.' }
-        ],
-        explain: 'La barrière est maintenant très haute : même des grains de 4 nm tiendraient des siècles. Mais pour retourner un grain, la tête doit fournir un champ d’environ 2K/M_s, ici près de 9 T. La tête n’en donne qu’environ 2 T. Le bit est stable, mais impossible à écrire.',
-        qty: ['K', 'B'],
-        limit: 'Changer de matériau change aussi M_s et T_C, pas seulement K.',
-        sources: ['weller', 'kryder']
-      },
-      {
-        name: 'Chauffer juste pour écrire',
-        intro: 'Souviens-toi du chapitre Température : chauffer affaiblit l’aimantation et l’anisotropie K, qui s’annule à la température de Curie. Un laser chauffe le grain un court instant, juste sous la tête.',
-        do: [
-          { txt: 'Appuie sur « FePt + laser ». Regarde la barrière pendant l’écriture.', actions: [{ label: 'FePt + laser', set: { mat: 'hamr', d: 4, T: 25, laser: true }, act: 'write' }] },
-          { txt: 'Laisse passer une dizaine d’« années ».', actions: [{ label: 'Dix ans ont passé' }] }
-        ],
-        barrier: true,
-        notice: 'Avec le laser, qu’as-tu observé ?',
-        choices: [
-          { t: 'Le mot s’est écrit, et il tient.', ok: function (s) { return s.writeOk && s.correct === 96; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Le mot s’est écrit, mais il s’efface.', ok: function (s) { return s.writeOk && s.correct < 96; }, fb: 'C’est bien ce qu’a calculé la simulation.' },
-          { t: 'Rien ne s’est écrit.', ok: function (s) { return !s.writeOk; }, fb: 'C’est bien ce qu’a calculé la simulation.' }
-        ],
-        explain: 'Chaud, le grain a une barrière basse : la tête peut l’écrire. Refroidi, K redevient grand et la barrière remonte : le bit est figé. C’est l’enregistrement magnétique assisté par la chaleur (HAMR).',
-        qty: ['T', 'K'],
-        limit: 'Chaque grain n’a que deux états. Le transport de la chaleur n’est pas calculé.',
-        sources: ['kryder', 'weller']
       }
     ]
   }
 ];
 
-const DECOUVERTE = PARCOURS.filter(function (g) { return !g.app; });
+// ===== vue/disk-playground.js =====
+const DISK_PLAY_MEDIA = {
+  standard: { mat: 'hdd', d: 9 },
+  fragile: { mat: 'hdd', d: 4 },
+  hard: { mat: 'hamr', d: 4 }
+};
+const DISK_AGE_YEARS = 10;
+const DISK_AGE_DURATION = 2;
 
-export { MODELS, PARCOURS, DECOUVERTE, GRANDEURS, PAL, frNum };
+function normalizeDiskLetter(value) {
+  return String(value || '').normalize('NFD').replace(/[^a-z]/gi, '').charAt(0).toUpperCase();
+}
+
+function recordDiskLetter(sim, target, laser) {
+  sim.setParam('word', target);
+  sim.setParam('laser', laser);
+  sim.writeWord(target, true);
+  sim.read();
+}
+
+function createDiskTrial(host, config, target, previous = '') {
+  const sim = new DiskSim(host, { word: previous, mat: 'hdd', d: 9, T: 25, clock: 'rt', laser: false, Bm: 0 });
+  // Prépare la même piste de départ avant de comparer les conditions d’écriture.
+  Object.assign(sim.p, { mat: config.mat, d: config.d });
+  recordDiskLetter(sim, target, Boolean(config.laser));
+  return { sim, target, previous };
+}
+
+class DiskPlayground {
+  constructor(root, host) {
+    this.root = root;
+    this.host = host;
+    this.medium = 'standard';
+    this.trial = null;
+    this.pending = null;
+    this.ageElapsed = null;
+    this.years = 0;
+    this.beforeCells = [];
+    this.field = qs('#free-disk-letter', root);
+    this.laser = qs('#free-disk-laser', root);
+    this.write = qs('#free-disk-write', root);
+    this.age = qs('#free-disk-age', root);
+    this.compareIntro = qs('#free-disk-compare-intro', root);
+    this.beforeTitle = qs('#free-disk-before-title', root);
+    this.beforeRow = qs('#free-disk-before-bits', root);
+    this.afterRow = qs('#free-disk-after-bits', root);
+    this.after = qs('#free-disk-after', root);
+    this.yearsLabel = qs('#free-disk-years', root);
+    this.ageProgress = qs('#free-disk-age-progress', root);
+    this.status = qs('#free-disk-status', root);
+    this.heat = qs('#free-disk-heat', root);
+    this.target = qs('#free-disk-target', root);
+    this.recorded = qs('#free-disk-recorded', root);
+    this.media = qsa('[data-disk-medium]', root);
+    this.field.value = '';
+    this.laser.checked = false;
+    this.field.oninput = () => {
+      this.field.value = normalizeDiskLetter(this.field.value);
+      this.update();
+    };
+    this.media.forEach(button => {
+      button.onclick = () => {
+        if (this.pending || this.ageElapsed !== null || this.medium === button.dataset.diskMedium) return;
+        this.medium = button.dataset.diskMedium;
+        this.trial = null;
+        this.resetAging();
+        this.laser.checked = false;
+        this.update();
+      };
+    });
+    qs('form', root).onsubmit = event => {
+      event.preventDefault();
+      if (this.pending || this.ageElapsed !== null || !this.field.value) return;
+      const laser = this.medium === 'hard' && this.laser.checked;
+      this.resetAging();
+      this.pending = { letter: this.field.value, laser, time: laser ? 1.25 : 0.4 };
+      this.update();
+      this.status.scrollIntoView({ block: 'nearest' });
+    };
+    this.age.onclick = () => {
+      if (this.age.disabled) return;
+      this.ageElapsed = 0;
+      this.update();
+      this.after.scrollIntoView({ block: 'nearest' });
+    };
+    this.update();
+  }
+
+  resetAging() {
+    this.ageElapsed = null;
+    this.years = 0;
+    this.beforeCells = [];
+  }
+
+  readCells(sim) {
+    return sim.bits.slice(0, 8).map((bit, i) => ({
+      bit,
+      grains: Array.from(sim.s.subarray(i * sim.G, (i + 1) * sim.G))
+    }));
+  }
+
+  renderBits(row, cells, before = []) {
+    row.innerHTML = Array.from({ length: 8 }, (_, i) => {
+      const cell = cells[i];
+      const bit = cell?.bit;
+      const orientation = bit === undefined ? 'blank' : bit ? 'up' : 'down';
+      const previous = before[i];
+      const changed = previous && bit !== previous.bit;
+      const upShare = cell && 100 * cell.grains.filter(spin => spin > 0).length / cell.grains.length;
+      const mark = cell ? '<span class="disk-grain-mark" style="--grain-up: ' + upShare + '%"></span>' : '';
+      return '<span class="track-bit ' + orientation + (changed ? ' changed' : '') + '" aria-hidden="true">' +
+        (bit === undefined ? '–' : bit) + mark + '</span>';
+    }).join('');
+    const label = row === this.beforeRow ? 'Bits au départ' : 'Bits relus';
+    const bits = cells.map(cell => cell.bit).join(' ');
+    row.setAttribute('aria-label', label + ', ' + (bits || 'en attente de l’écriture'));
+  }
+
+  agingFeedback(afterCells) {
+    const changedBits = afterCells.filter((cell, i) => cell.bit !== this.beforeCells[i].bit).length;
+    let changedGrains = 0;
+    let grainsCount = 0;
+    afterCells.forEach((cell, i) => {
+      grainsCount += cell.grains.length;
+      changedGrains += cell.grains.filter((spin, j) => spin !== this.beforeCells[i].grains[j]).length;
+    });
+    const grainSummary = changedGrains === 1 ? '1 grain sur ' + grainsCount + ' a changé de sens.' :
+      changedGrains > 1 ? changedGrains + ' grains sur ' + grainsCount + ' ont changé de sens.' :
+        'Les grains ont gardé leur orientation.';
+    if (changedBits > 0) {
+      const summary = changedBits === 1 ? '1 bit modifié sur 8.' : changedBits + ' bits modifiés sur 8.';
+      return summary + ' ' + grainSummary;
+    }
+    const reason = changedGrains > 0 ? ' La majorité est restée la même dans chaque case.' : '';
+    const next = this.medium === 'fragile' ? ' Compare avec une autre piste.' : ' Essaie les petits grains pour comparer.';
+    return '0 bit modifié sur 8. ' + grainSummary + reason + next;
+  }
+
+  update() {
+    const pending = this.pending, trial = this.trial;
+    const aging = this.ageElapsed !== null;
+    const busy = Boolean(pending) || aging;
+    const writingLaser = Boolean(pending && pending.laser);
+    const cooled = !pending && trial && trial.laser;
+    const letter = this.field.value;
+    const recorded = trial ? trial.sim.text[0].trim() : '';
+    this.media.forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.diskMedium === this.medium));
+      button.disabled = busy;
+    });
+    this.field.readOnly = busy;
+    this.laser.disabled = busy;
+    qs('#free-disk-laser-control', this.root).hidden = this.medium !== 'hard';
+    this.compareIntro.hidden = this.medium === 'hard';
+    this.write.disabled = !letter;
+    if (busy) this.write.setAttribute('aria-disabled', 'true');
+    else this.write.removeAttribute('aria-disabled');
+    this.write.textContent = pending ? 'Écriture en cours…' : letter ? 'Écrire « ' + letter + ' »' : 'Écrire la lettre';
+    this.target.textContent = pending ? pending.letter : trial ? trial.target : letter || '—';
+    this.recorded.textContent = recorded === '·' ? 'Illisible' : recorded || '—';
+    this.heat.dataset.heat = writingLaser ? 'hot' : 'cold';
+    this.heat.textContent = writingLaser ? 'Flash laser' : cooled ? 'Piste refroidie' : 'À température ambiante';
+    const failed = !busy && trial && !trial.sim.writeOk;
+    this.beforeTitle.textContent = failed ? 'Après la tentative d’écriture' : 'Après l’écriture';
+    this.age.disabled = busy || this.years === DISK_AGE_YEARS || !trial || !trial.sim.writeOk;
+    this.after.hidden = !aging && this.years === 0;
+    this.ageProgress.hidden = !aging;
+    this.ageProgress.value = this.years;
+    this.yearsLabel.textContent = this.years === 0 ? 'Au départ' : this.years === 1 ? '1 an après' : this.years + ' ans après';
+    const afterCells = this.after.hidden ? [] : this.readCells(trial.sim);
+    this.renderBits(this.beforeRow, this.beforeCells);
+    this.renderBits(this.afterRow, afterCells, this.after.hidden ? [] : this.beforeCells);
+    let feedback = 'Choisis une lettre et lance l’écriture.';
+    if (writingLaser) {
+      feedback = 'Le flash chauffe la piste. La barrière baisse et la tête peut retourner les grains.';
+    } else if (pending) {
+      feedback = 'La tête essaie d’orienter les grains.';
+    } else if (aging) {
+      feedback = 'Le temps avance. Compare les bits relus à ceux du départ.';
+    } else if (trial) {
+      if (!trial.sim.writeOk) {
+        feedback = 'La lettre n’a pas été enregistrée. À température ambiante, la barrière est trop haute pour la tête. Active le flash et essaie d’écrire la même lettre.';
+      } else if (this.years === DISK_AGE_YEARS) {
+        feedback = this.agingFeedback(afterCells);
+      } else if (cooled) {
+        feedback = 'La lettre est enregistrée. Le flash a abaissé la barrière et la tête a pu retourner les grains. La barrière est remontée au refroidissement.';
+      } else {
+        feedback = 'La lettre est enregistrée. Fais passer dix ans pour voir si elle tient.';
+      }
+    }
+    if (this.status.textContent !== feedback) this.status.textContent = feedback;
+  }
+
+  frame(dt) {
+    if (this.ageElapsed !== null) {
+      this.ageElapsed += dt;
+      const years = Math.min(DISK_AGE_YEARS, Math.floor(this.ageElapsed * DISK_AGE_YEARS / DISK_AGE_DURATION));
+      if (years === this.years) return;
+      while (this.years < years) {
+        this.trial.sim.update(DISK_CLOCK.year[0], 1);
+        this.years++;
+      }
+      if (years === DISK_AGE_YEARS) this.ageElapsed = null;
+      this.update();
+      return;
+    }
+    const pending = this.pending;
+    if (!pending) return;
+    pending.time -= dt;
+    if (pending.time > 0) return;
+    if (this.trial) {
+      recordDiskLetter(this.trial.sim, pending.letter, pending.laser);
+      this.trial.target = pending.letter;
+    } else {
+      this.trial = createDiskTrial(this.host, { ...DISK_PLAY_MEDIA[this.medium], laser: pending.laser }, pending.letter);
+    }
+    this.trial.laser = pending.laser;
+    this.pending = null;
+    this.beforeCells = this.readCells(this.trial.sim);
+    if (this.trial.sim.writeOk) this.host.sfx('flip');
+    this.update();
+  }
+}
+
+// ===== vue/workshops.js =====
+class ApplicationWorkshop {
+  constructor(root, callbacks) {
+    this.root = root;
+    this.callbacks = callbacks;
+    this.word = normalizeDiskLetter(callbacks.readDiskLetter?.() || '');
+    this.reset();
+  }
+
+  reset() {
+    this.trial = null;
+    this.pending = null;
+    this.read = false;
+    this.answer = null;
+    this.revealed = false;
+    this.render();
+  }
+
+  header(title, intro) {
+    return '<header class="workshop-head"><a class="back" href="#application">← Applications</a>' +
+      '<div class="guided-meta"><span>Disque dur</span></div>' +
+      '<h1 id="workshop-title" tabindex="-1">' + title + '</h1><p>' + intro + '</p></header>';
+  }
+
+  render(focus) {
+    const writing = Boolean(this.pending);
+    const recorded = this.read ? this.trial.sim.text[0] : this.trial ? 'À relire' : '—';
+    let message = 'Choisis une lettre, puis lance l’écriture.';
+    if (writing) message = 'La tête oriente les grains de la piste.';
+    else if (this.read) message = 'Lettre relue · « ' + recorded + ' »';
+    else if (this.trial) message = 'La tête a écrit ta lettre. Relis la piste pour la retrouver.';
+
+    this.root.innerHTML = this.header('Comment le disque garde ta lettre',
+      'Écris une lettre et relis-la. Le disque la code en huit bits (des 0 et des 1) grâce au sens de petits aimants dans la piste. On appelle ces petits aimants des grains.') +
+      '<div class="workshop-grid disk-tutorial-grid"><section class="workshop-visual" aria-label="Piste d’écriture">' +
+        '<div class="track-header"><b>Piste magnétique</b></div>' +
+        '<dl class="disk-letter-pair"><div><dt>Lettre demandée</dt><dd id="disk-target-letter">' + escHtml(this.word || '—') +
+        '</dd></div><div><dt>Lettre sur la piste</dt><dd id="disk-recorded-letter">' + escHtml(recorded) + '</dd></div></dl>' +
+        '<div class="track-bits" aria-label="Huit groupes de grains">' +
+        Array.from({ length: 8 }, (_, i) => {
+          const bit = this.trial ? this.trial.sim.bits[i] : null;
+          return '<div class="track-bit ' + (bit === null ? 'blank' : bit ? 'up' : 'down') + '">' +
+            '<div aria-hidden="true">' + (bit === null ? '·' : bit ? '↑' : '↓') + '</div>' +
+            '<span>' + (this.read ? bit : '–') + '</span></div>';
+        }).join('') + '</div>' +
+        '<p class="track-key"><span>↑ Rouge · 1</span><span>↓ Bleu · 0</span></p>' +
+        '<p id="track-status" class="track-caption" role="status" tabindex="-1">' + escHtml(message) + '</p></section>' +
+      '<section class="workshop-controls" aria-label="Commandes du disque"><h2>À toi d’écrire</h2>' +
+        '<div class="disk-letter-form"><label for="disk-word">Lettre à écrire (A à Z)</label><input id="disk-word" type="text" maxlength="1" ' +
+        'autocomplete="off" autocapitalize="characters" spellcheck="false" value="' + escHtml(this.word) + '"' + (writing ? ' readonly' : '') + '>' +
+        '<div class="workshop-actions"><button class="btn primary" id="disk-write" type="button"' + (writing ? ' aria-disabled="true"' : '') + '></button>' +
+        '<button class="btn" id="disk-read" type="button"' + (!this.trial || writing ? ' disabled' : '') + '>Relire la piste</button>' +
+        '</div></div><div id="disk-bilan">' + this.review() + '</div></section></div>';
+
+    const input = qs('#disk-word', this.root);
+    input.oninput = () => {
+      input.value = normalizeDiskLetter(input.value);
+      this.word = input.value;
+      this.updateControls();
+    };
+    input.onkeydown = event => {
+      if (event.key === 'Enter') qs('#disk-write', this.root).click();
+    };
+    qs('#disk-write', this.root).onclick = () => {
+      if (this.pending || !this.word) return;
+      this.trial = null;
+      this.read = false;
+      this.answer = null;
+      this.revealed = false;
+      this.pending = { target: this.word, seconds: 0.85 };
+      this.callbacks.saveDiskLetter?.(this.word);
+      this.render('#disk-write');
+    };
+    qs('#disk-read', this.root).onclick = () => {
+      this.read = true;
+      this.render('#track-status');
+    };
+    qsa('[data-disk-answer]', this.root).forEach(button => {
+      button.onclick = () => {
+        this.answer = Number(button.dataset.diskAnswer);
+        this.render(this.answer === 1 ? '#disk-explain' : '[data-disk-answer="0"]');
+      };
+    });
+    const reveal = qs('#disk-reveal', this.root);
+    if (reveal) reveal.onclick = () => { this.revealed = true; this.render('#disk-explain'); };
+    const next = qs('#disk-next', this.root);
+    if (next) next.onclick = () => this.complete();
+    this.updateControls();
+    if (focus) {
+      const element = qs(focus, this.root);
+      element.focus({ preventScroll: focus === '#track-status' || focus === '#disk-write' });
+      if (focus === '#track-status') element.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    }
+  }
+
+  updateControls() {
+    const write = qs('#disk-write', this.root);
+    write.disabled = !this.word;
+    write.textContent = this.pending ? 'Écriture en cours…' : this.word ? 'Écrire « ' + this.word + ' »' : 'Écrire la lettre';
+    qs('#disk-target-letter', this.root).textContent = this.word || '—';
+    qs('#disk-bilan', this.root).hidden = !this.read || this.trial.target !== this.word;
+  }
+
+  review() {
+    if (!this.read) return '';
+    const correct = this.answer === 1;
+    let html = '<div class="guide-question"><h3>Que détecte la tête de lecture ?</h3><div class="guide-options">' +
+      ['La forme de ma lettre', 'Le sens des petits aimants sur la piste'].map((choice, i) =>
+        '<button class="guide-option" type="button" data-disk-answer="' + i + '" aria-pressed="' +
+        (this.answer === i) + '">' + choice + '</button>'
+      ).join('') + '</div>';
+    if (correct || this.revealed) {
+      html += '<div id="disk-explain" class="guide-explain" tabindex="-1"><h3>Ce que montre la piste</h3>' +
+        '<p>La tête d’écriture oriente les grains magnétiques. La tête de lecture repère leurs orientations. ' +
+        'L’ordinateur transforme ensuite les 0 et les 1 en lettre.</p></div>' +
+        '<p><button id="disk-next" class="btn primary" type="button">Terminer l’activité →</button></p>';
+    } else if (this.answer !== null) {
+      html += '<p class="guide-fb no" role="status">Regarde les flèches sur la piste et les 0 et 1 qui apparaissent quand tu lis.</p>' +
+        '<button id="disk-reveal" class="guide-link" type="button">Voir l’explication</button>';
+    }
+    return html + '</div>';
+  }
+
+  complete() {
+    this.callbacks.complete();
+    this.root.innerHTML = this.header('Tu as écrit et relu une lettre',
+      'Le disque garde la lettre grâce à l’orientation de ses grains magnétiques.') +
+      '<div class="workshop-end"><div class="guide-foot"><a class="btn primary" href="#xp-disk">Pour aller plus loin →</a>' +
+      '<a class="btn" href="#guide-haut-parleur">Découvrir le haut-parleur →</a>' +
+      '<button class="guide-link" id="disk-replay" type="button">Rejouer</button></div></div>';
+    qs('#disk-replay', this.root).onclick = () => {
+      this.reset();
+      qs('#workshop-title', this.root).focus();
+    };
+    qs('#workshop-title', this.root).focus();
+  }
+
+  frame(dt) {
+    if (!this.pending) return;
+    this.pending.seconds -= dt;
+    if (this.pending.seconds > 0) return;
+    this.trial = createDiskTrial(this.callbacks.diskHost, DISK_PLAY_MEDIA.standard, this.pending.target);
+    this.pending = null;
+    this.callbacks.diskHost.sfx('flip');
+    this.render(document.activeElement.id === 'disk-write' ? '#track-status' : null);
+  }
+}
+
+// ===== vue/speaker-diagram.js =====
+const SPEAKER_DIAGRAM_WIDTH = 340;
+const SPEAKER_DIAGRAM_HEIGHT = 222;
+
+function speakerDiagramMarkup() {
+  return '<figure class="speaker-diagram" style="margin:0">' +
+    '<canvas class="speaker-cutaway" width="' + SPEAKER_DIAGRAM_WIDTH + '" height="' + SPEAKER_DIAGRAM_HEIGHT + '" ' +
+    'role="img" aria-label="Coupe d’un haut-parleur. L’aimant reste fixe. La bobine et la membrane se déplacent ensemble. La membrane fait vibrer l’air devant elle." ' +
+    'style="display:block;width:100%;height:auto;border-radius:12px;background:#eef2e8">' +
+    'L’aimant reste fixe. La bobine entraîne la membrane qui met l’air en mouvement.</canvas>' +
+    '</figure>';
+}
+
+function speakerStroke(ctx, color, width, points) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (const [x, y] of points.slice(1)) ctx.lineTo(x, y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
+function drawSpeakerBody(ctx) {
+  const edge = '#526c66';
+  speakerStroke(ctx, edge, 4, [[53, 81], [95, 78], [209, 49], [214, 49], [214, 69]]);
+  speakerStroke(ctx, edge, 4, [[53, 151], [95, 154], [209, 183], [214, 183], [214, 163]]);
+
+  ctx.fillStyle = '#6f8780';
+  ctx.fillRect(37, 81, 13, 70);
+  ctx.fillRect(50, 108, 59, 16);
+  ctx.fillStyle = '#91a49d';
+  for (const y of [79, 96, 130, 147]) ctx.fillRect(50, y, 48, 5);
+
+  for (const y of [84, 135]) {
+    ctx.fillStyle = '#a52e2d';
+    ctx.fillRect(51, y, 43, 12);
+    for (let x = 55; x < 91; x += 8) {
+      speakerStroke(ctx, '#efd1b4', 1.25, [[x, y + 9], [x + 4, y + 3]]);
+    }
+  }
+}
+
+function drawSpeakerMovingParts(ctx, dx, direction) {
+  ctx.fillStyle = '#e2ba63';
+  ctx.fillRect(99 + dx, 98, 33, 9);
+  ctx.fillRect(99 + dx, 125, 33, 9);
+  for (const y of [98, 125]) {
+    for (let x = 100; x <= 130; x += 5) {
+      speakerStroke(ctx, '#87420e', 2.3, [[x + dx, y], [x + dx, y + 9]]);
+    }
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(128 + dx, 102);
+  ctx.lineTo(196 + dx, 67);
+  ctx.lineTo(196 + dx, 165);
+  ctx.lineTo(128 + dx, 130);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(153, 192, 128, .23)';
+  ctx.fill();
+  speakerStroke(ctx, '#2e6149', 4.5, [[196 + dx, 67], [128 + dx, 102], [128 + dx, 130], [196 + dx, 165]]);
+  ctx.beginPath();
+  ctx.moveTo(128 + dx, 102);
+  ctx.bezierCurveTo(145 + dx, 102, 145 + dx, 130, 128 + dx, 130);
+  ctx.strokeStyle = '#2e6149';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  for (const [y, curl] of [[67, -11], [165, 11]]) {
+    ctx.beginPath();
+    ctx.moveTo(196 + dx, y);
+    ctx.quadraticCurveTo((410 + dx) / 2, y + curl, 214, y);
+    ctx.strokeStyle = '#526c66';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  if (direction) {
+    const end = 159 + dx + 11 * direction;
+    speakerStroke(ctx, '#285943', 2, [[159 + dx - 11 * direction, 116], [end, 116]]);
+    speakerStroke(ctx, '#285943', 2, [[end - 6 * direction, 111], [end, 116], [end - 6 * direction, 121]]);
+  }
+}
+
+function drawSpeakerAir(ctx, showAir, phase) {
+  const progress = phase / (2 * Math.PI);
+  const cycle = progress - Math.floor(progress);
+  ctx.fillStyle = '#658c7e';
+  for (let x = 224; x < 321; x += 13) {
+    const shift = showAir ? 1.8 * Math.sin(phase - (x - 218) / 31 * (2 * Math.PI)) : 0;
+    for (let y = 73; y < 176; y += 17) {
+      ctx.beginPath();
+      ctx.arc(x + shift, y + (x % 3) * 3, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (!showAir) return;
+  for (let i = 0; i < 3; i++) {
+    const distance = (i + cycle) * 35;
+    const x = 223 + distance;
+    const height = 24 + 0.22 * distance;
+    ctx.globalAlpha = Math.min(1, distance / 13, (105 - distance) / 22);
+    ctx.beginPath();
+    ctx.moveTo(x, 116 - height);
+    ctx.quadraticCurveTo(x + 14, 116, x, 116 + height);
+    ctx.strokeStyle = '#226961';
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSpeakerLabels(ctx, displacement) {
+  const connector = '#496760';
+  speakerStroke(ctx, connector, 1.25, [[52, 34], [52, 61], [70, 89]]);
+  speakerStroke(ctx, connector, 1.25, [[167, 34], [167, 53], [174 + displacement, 78]]);
+  speakerStroke(ctx, connector, 1.25, [[88, 190], [101 + displacement, 168], [112 + displacement, 130]]);
+  ctx.fillStyle = '#173c35';
+  ctx.font = '700 15px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Aimant fixe', 52, 27);
+  ctx.fillText('Membrane', 167, 27);
+  ctx.fillText('Air', 271, 27);
+  ctx.fillText('Bobine', 87, 207);
+}
+
+function updateSpeakerDiagram(root, displacement, direction, showAir, phase = 0) {
+  const canvas = root.querySelector('.speaker-cutaway');
+  const displayWidth = canvas?.clientWidth;
+  if (!displayWidth) return;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.round(displayWidth * pixelRatio);
+  const height = Math.round(width * SPEAKER_DIAGRAM_HEIGHT / SPEAKER_DIAGRAM_WIDTH);
+  if (width !== canvas.width || height !== canvas.height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const dx = displacement * 9;
+  ctx.setTransform(width / SPEAKER_DIAGRAM_WIDTH, 0, 0, height / SPEAKER_DIAGRAM_HEIGHT, 0, 0);
+  ctx.fillStyle = '#eef2e8';
+  ctx.fillRect(0, 0, SPEAKER_DIAGRAM_WIDTH, SPEAKER_DIAGRAM_HEIGHT);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  drawSpeakerAir(ctx, showAir, phase);
+  drawSpeakerBody(ctx);
+  drawSpeakerMovingParts(ctx, dx, direction);
+  drawSpeakerLabels(ctx, dx);
+}
+
+// ===== vue/speaker-workshop.js =====
+class SpeakerWorkshop {
+  constructor(root) {
+    this.root = root;
+    this.mode = 'motion';
+    this.current = 0;
+    this.displacement = 0;
+    this.vibrating = false;
+    this.pitch = 240;
+    this.phase = 0;
+    this.tone = null;
+    root.innerHTML = `
+      <header class="workshop-head speaker-head">
+        <a class="back" href="#application">← Applications</a>
+        <h1 id="workshop-title">Comment le haut-parleur produit du son</h1>
+        <p>Dans une enceinte ou un casque, un aimant aide à transformer un courant électrique en son.</p>
+      </header>
+      <div class="workshop-grid speaker-grid">
+        <section class="workshop-visual speaker-visual" aria-label="Haut-parleur vu de côté">
+          ${speakerDiagramMarkup()}
+          <p id="speaker-motion-status" role="status"></p>
+        </section>
+        <div class="speaker-controls">
+          <div class="speaker-modes" role="group" aria-label="Expériences du haut-parleur">
+            <button class="btn" id="speaker-mode-motion" type="button" aria-controls="speaker-motion-controls">Déplacer</button>
+            <button class="btn" id="speaker-mode-vibration" type="button" aria-controls="speaker-vibration-controls">Faire vibrer</button>
+          </div>
+          <section id="speaker-motion-controls" aria-labelledby="speaker-motion-title">
+            <h2 id="speaker-motion-title">Déplace la membrane</h2>
+            <p>La bobine est un fil enroulé. Elle est attachée à la membrane, la pièce qui pousse l’air. Inverse le courant dans le fil et regarde quelles pièces bougent.</p>
+            <div class="speaker-current" role="group" aria-label="Courant dans la bobine">
+              <button class="btn" id="speaker-current-out" type="button">Sens 1</button>
+              <button class="btn" id="speaker-current-off" type="button">Courant coupé</button>
+              <button class="btn" id="speaker-current-in" type="button">Sens 2</button>
+            </div>
+            <p id="speaker-force-help" hidden>L’aimant reste fixe. Son champ exerce une force sur la bobine quand le courant passe. Inverse le courant et la force change de sens. Avec un courant de sens constant, la membrane reste décalée.</p>
+          </section>
+          <section id="speaker-vibration-controls" aria-labelledby="speaker-vibration-title" hidden>
+            <h2 id="speaker-vibration-title">Fais vibrer la membrane</h2>
+            <p>Si le courant change de sens en boucle, la membrane va et vient. Elle comprime puis relâche l’air. Cette vibration se propage jusqu’à l’oreille.</p>
+            <div class="speaker-actions">
+              <button class="btn" id="speaker-vibration" type="button"></button>
+              <button class="btn" id="speaker-listen" type="button"></button>
+            </div>
+            <p class="speaker-audio-error" id="speaker-audio-error" role="status" hidden>Le son est indisponible dans ce navigateur. Le dessin montre toujours la vibration de l’air.</p>
+            <label class="speaker-pitch-label" for="speaker-pitch"><strong>Vitesse des allers-retours</strong> <output id="speaker-pitch-value" for="speaker-pitch">240 Hz</output></label>
+            <input id="speaker-pitch" type="range" min="180" max="720" step="10" value="240" aria-describedby="speaker-pitch-help">
+            <div class="speaker-range-labels" aria-hidden="true"><span>Plus grave</span><span>Plus aigu</span></div>
+            <p id="speaker-pitch-help">240 Hz veut dire 240 allers-retours par seconde. Le dessin ralentit le mouvement pour qu’on puisse le suivre.</p>
+          </section>
+          <details id="speaker-quiz" class="speaker-quiz">
+            <summary>Teste ta compréhension</summary>
+            <p>D’où vient le son qui arrive à ton oreille ?</p>
+            <div class="guide-options">
+              <button class="guide-option" type="button" data-speaker-answer="0" aria-pressed="false">De l’aimant qui vibre</button>
+              <button class="guide-option" type="button" data-speaker-answer="1" aria-pressed="false">De l’air mis en vibration par la membrane</button>
+            </div>
+            <p id="speaker-feedback" role="status" hidden></p>
+          </details>
+        </div>
+      </div>`;
+
+    const elements = this.el = {};
+    for (const key of ['mode-motion', 'mode-vibration', 'motion-controls', 'vibration-controls',
+      'current-out', 'current-off', 'current-in', 'force-help', 'motion-status', 'vibration', 'listen',
+      'audio-error', 'pitch', 'pitch-value', 'pitch-help', 'feedback']) {
+      elements[key] = qs('#speaker-' + key, root);
+    }
+    elements['mode-motion'].onclick = () => this.setMode('motion');
+    elements['mode-vibration'].onclick = () => this.setMode('vibration');
+    elements['current-out'].onclick = () => this.setCurrent(1);
+    elements['current-in'].onclick = () => this.setCurrent(-1);
+    elements['current-off'].onclick = () => this.setCurrent(0);
+    elements.vibration.onclick = () => {
+      this.vibrating = !this.vibrating;
+      if (!this.vibrating) this.stopAudio();
+      this.refresh();
+    };
+    elements.listen.onclick = () => {
+      if (this.tone) this.stopAudio();
+      else {
+        this.vibrating = true;
+        this.startAudio();
+      }
+      this.refresh();
+    };
+    elements.pitch.oninput = () => this.setPitch(Number(elements.pitch.value));
+
+    const answers = qsa('[data-speaker-answer]', root);
+    answers.forEach(button => {
+      button.onclick = () => {
+        const correct = button.dataset.speakerAnswer === '1';
+        answers.forEach(choice => choice.setAttribute('aria-pressed', String(choice === button)));
+        elements.feedback.className = correct ? 'guide-fb ok' : 'guide-fb no';
+        elements.feedback.hidden = false;
+        elements.feedback.textContent = correct
+          ? 'Bien vu ! L’aimant reste fixe. La membrane suit les mouvements de la bobine et fait vibrer l’air.'
+          : 'Regarde l’aimant pendant la vibration. Quelle pièce bouge au contact de l’air ?';
+      };
+    });
+    this.onVisibilityChange = () => {
+      if (!document.hidden || !this.tone) return;
+      this.stopAudio();
+      this.refresh();
+    };
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.resize = new ResizeObserver(() => this.draw());
+    this.resize.observe(qs('.speaker-cutaway', root));
+    this.setPitch(this.pitch);
+    this.refresh();
+  }
+
+  setMode(mode) {
+    if (mode === this.mode) return;
+    this.stopAudio();
+    this.vibrating = false;
+    this.current = 0;
+    this.mode = mode;
+    this.refresh();
+  }
+
+  setCurrent(current) {
+    this.current = current;
+    if (current) this.el['force-help'].hidden = false;
+    this.refresh();
+  }
+
+  setPitch(pitch) {
+    this.pitch = pitch;
+    this.el['pitch-value'].textContent = pitch + ' Hz';
+    this.el.pitch.setAttribute('aria-valuetext', pitch + ' allers-retours par seconde');
+    this.el['pitch-help'].textContent = pitch + ' Hz veut dire ' + pitch +
+      ' allers-retours par seconde. Le dessin ralentit le mouvement pour qu’on puisse le suivre.';
+    if (this.tone) this.tone.oscillator.frequency.setTargetAtTime(pitch, Snd.ctx.currentTime, 0.02);
+  }
+
+  startAudio() {
+    const error = this.el['audio-error'];
+    error.hidden = Snd.ensure();
+    if (!error.hidden) return;
+
+    const ctx = Snd.ctx;
+    const oscillator = ctx.createOscillator(), gain = ctx.createGain();
+    oscillator.frequency.value = this.pitch;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.setTargetAtTime(0.055, ctx.currentTime, 0.015);
+    oscillator.connect(gain);
+    gain.connect(Snd.master);
+    oscillator.addEventListener('ended', () => {
+      oscillator.disconnect();
+      gain.disconnect();
+    }, { once: true });
+    oscillator.start();
+    this.tone = { oscillator, gain };
+    if (ctx.state !== 'running') ctx.resume().catch(() => {
+      if (this.tone?.oscillator !== oscillator) return;
+      this.stopAudio();
+      error.hidden = false;
+      this.refresh();
+    });
+  }
+
+  stopAudio() {
+    if (!this.tone) return;
+    const { oscillator, gain } = this.tone;
+    const ctx = Snd.ctx;
+    gain.gain.setTargetAtTime(0, ctx.currentTime, 0.012);
+    oscillator.stop(ctx.currentTime + 0.07);
+    this.tone = null;
+  }
+
+  refresh() {
+    const direct = this.mode === 'motion';
+    const el = this.el;
+    const press = (key, value) => el[key].setAttribute('aria-pressed', String(value));
+    press('mode-motion', direct);
+    press('mode-vibration', !direct);
+    el['motion-controls'].hidden = !direct;
+    el['vibration-controls'].hidden = direct;
+    press('current-out', this.current === 1);
+    press('current-in', this.current === -1);
+    press('current-off', this.current === 0);
+    press('vibration', this.vibrating);
+    press('listen', Boolean(this.tone));
+    el.vibration.textContent = this.vibrating ? 'Arrêter la vibration' : 'Lancer la vibration';
+    el.listen.textContent = this.tone ? 'Couper le son' : 'Écouter le son';
+    el['motion-status'].textContent = this.vibrating ? 'La membrane va et vient. L’air vibre.' :
+      this.current === 1 ? 'La bobine et la membrane se décalent vers l’air.' :
+      this.current === -1 ? 'La bobine et la membrane se décalent vers l’aimant.' : 'Courant coupé. La membrane est au repos.';
+    this.draw();
+  }
+
+  draw() {
+    updateSpeakerDiagram(this.root, this.displacement, this.current, this.vibrating, this.phase);
+  }
+
+  frame(dt) {
+    const target = this.current;
+    if (this.vibrating) {
+      this.phase = (this.phase + 2 * Math.PI * this.pitch * dt / 240) % (2 * Math.PI);
+      this.displacement = Math.sin(this.phase) * 0.76;
+    } else {
+      if (this.displacement === target) return;
+      this.displacement += (target - this.displacement) * (1 - Math.exp(-16 * dt));
+      if (Math.abs(this.displacement - target) < 0.004) this.displacement = target;
+    }
+    this.draw();
+  }
+
+  destroy() {
+    this.stopAudio();
+    this.resize.disconnect();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+  }
+}
+
+export { MODELS, DECOUVERTE, GRANDEURS, REFS, PAL, frNum, ApplicationWorkshop, DiskPlayground, SpeakerWorkshop, FilingsSim };
