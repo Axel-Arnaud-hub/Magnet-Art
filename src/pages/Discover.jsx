@@ -10,6 +10,11 @@ export default function Discover() {
         Pas besoin de connaître la physique. Dans chaque étape, tu fais d’abord une manipulation. Ensuite on te demande ce que tu as remarqué. Enfin, on explique ce qui
         s’est passé.
       </p>
+      <p>
+        <a className="start" href="#guide-limaille">
+          Commencer le chapitre 1 →
+        </a>
+      </p>
       <div className="how">
         <span><b>1</b> Je fais</span>
         <span><b>2</b> Je remarque</span>
@@ -18,7 +23,7 @@ export default function Discover() {
 
       <div className="chapters">
         {CHAPTERS.map((c, i) => (
-          <article key={c.id} className="chapter">
+          <a key={c.id} className="chapter" href={'#guide-' + c.id}>
             <div className="chapter-top">
               <span className="chapter-n">{String(i + 1).padStart(2, '0')}</span>
               <span aria-hidden="true">{c.icon}</span>
@@ -33,8 +38,10 @@ export default function Discover() {
                 </span>
               ))}
             </div>
-            <p className="chapter-bottom">{c.steps} étapes · bientôt disponible</p>
-          </article>
+            <p className="chapter-bottom">
+              {c.steps} étapes · <strong>Commencer →</strong>
+            </p>
+          </a>
         ))}
       </div>
 
@@ -50,10 +57,6 @@ export default function Discover() {
           ))}
         </div>
       </section>
-
-      <p className="lead">
-        En attendant les chapitres, va jouer dans le <a href="#xp-sandbox">bac à sable</a>.
-      </p>
     </Layout>
   )
 }

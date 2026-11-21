@@ -1,7 +1,7 @@
 import './pages.css'
 
 // Cadre commun des pages de contenu (accueil, découverte).
-export default function Layout({ current, children }) {
+export default function Layout({ current, wide, children }) {
   const link = (id, label) => (
     <a href={'#' + id} aria-current={current === id ? 'page' : undefined}>
       {label}
@@ -19,7 +19,7 @@ export default function Layout({ current, children }) {
           {link('xp-sandbox', 'Bac à sable')}
         </nav>
       </header>
-      <main className="page-main">{children}</main>
+      <main className={'page-main' + (wide ? ' wide' : '')}>{children}</main>
     </div>
   )
 }

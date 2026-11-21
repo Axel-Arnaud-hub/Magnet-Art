@@ -215,14 +215,27 @@ button.play {
 }
 
 a.home {
-  color: var(--dim);
-  text-decoration: none;
-  font-size: 14px;
-  padding: 0 4px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: #d7301f;
+  border-radius: 4px;
+}
+
+a.home svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
 a.home:hover {
-  color: var(--fg);
+  background: #ef4a37;
 }
 
 /* ---- curseurs, choix, joystick ---- */
@@ -370,8 +383,17 @@ button.link {
     z-index: 1;
   }
 
-  button.ghost,
   a.home {
+    width: 36px;
+    height: 36px;
+  }
+
+  a.home svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  button.ghost {
     font-size: 20px;
     min-width: 36px;
     min-height: 36px;

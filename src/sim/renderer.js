@@ -6,9 +6,13 @@ import { buildLut, LUT_SIZE } from './palettes.js'
 export const MZ_SHADE = 0.92
 
 // Position du film à l'écran, en pixels CSS. cover : remplit tout l'écran.
+// Sur téléphone (≤ 640 px, panneau en bas), un film qui ne remplit pas l'écran
+// est collé en haut, avec la même marge qu'à gauche et à droite.
 export function computeLayout(nx, ny, W, H, cover) {
   const s = cover ? Math.max(W / nx, H / ny) : Math.min((W * 0.88) / nx, (H * 0.88) / ny)
-  return { s, x0: (W - nx * s) / 2, y0: (H - ny * s) / 2, nx, ny }
+  const x0 = (W - nx * s) / 2
+  const top = !cover && W <= 640
+  return { s, x0, y0: top ? Math.max(x0, 12) : (H - ny * s) / 2, nx, ny }
 }
 
 // Coordonnées écran (px CSS) -> coordonnées de cellule (j vers le haut).
