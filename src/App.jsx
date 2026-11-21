@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import FieldCanvas from './components/FieldCanvas.jsx'
 import ControlPanel from './components/ControlPanel.jsx'
-import { DEFAULT_PARAMS, Simulation, fitToAspect } from './sim/Simulation.js'
+import { WORLDS, Simulation, fitToAspect, worldPhys } from './sim/Simulation.js'
 import { AmbientEngine } from './audio/AmbientEngine.js'
 
-// Paramètres effectifs : si « plein écran », le film prend le ratio de la fenêtre.
-function makeSim(params) {
+const DEFAULT_WORLD = 'skyrmion'
+
+// Monde + paramètres réglables. Plein écran : le film prend le ratio de la fenêtre.
+function makeSim(world, phys) {
+  const params = { ...WORLDS[world], ...phys }
   const p = params.fill ? fitToAspect(params, window.innerHeight / window.innerWidth) : params
   return new Simulation(p)
 }
 
 export default function App() {
-  const [draft, setDraft] = useState(DEFAULT_PARAMS)
-  const [applied, setApplied] = useState(DEFAULT_PARAMS)
-  const [sim, setSim] = useState(() => makeSim(DEFAULT_PARAMS))
+  const [world, setWorld] = useState(DEFAULT_WORLD)
+  const [phys, setPhysState] = useState(() => worldPhys(DEFAULT_WORLD))
+  const [sim, setSim] = useState(() => makeSim(DEFAULT_WORLD, worldPhys(DEFAULT_WORLD)))
   const [running, setRunning] = useState(true)
   const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false })
   const [speed, setSpeed] = useState(1)
@@ -35,13 +38,28 @@ export default function App() {
     else if (!next.on && e.wanted) await e.stop()
   }, [])
 
-  const dirty = draft !== applied
+  // A, K, D, B, démag : appliqués en direct, sans réinitialiser le film.
+  const setPhys = useCallback(
+    (next) => {
+      setPhysState(next)
+      sim.setPhysics(next)
+    },
+    [sim],
+  )
 
-  const launch = useCallback(() => {
-    setSim(makeSim(draft))
-    setApplied(draft)
+  const chooseWorld = useCallback((id) => {
+    const p = worldPhys(id)
+    setWorld(id)
+    setPhysState(p)
+    setSim(makeSim(id, p))
     setRunning(true)
-  }, [draft])
+  }, [])
+
+  // Relance le monde courant avec les réglages actuels.
+  const launch = useCallback(() => {
+    setSim(makeSim(world, phys))
+    setRunning(true)
+  }, [world, phys])
 
   const toggle = useCallback(() => setRunning((r) => !r), [])
 
@@ -65,9 +83,10 @@ export default function App() {
     <>
       <FieldCanvas sim={sim} running={running} view={view} speed={speed} tool={tool} onStats={setStats} engine={engine} />
       <ControlPanel
-        draft={draft}
-        setDraft={setDraft}
-        dirty={dirty}
+        world={world}
+        onWorld={chooseWorld}
+        phys={phys}
+        setPhys={setPhys}
         running={running}
         onLaunch={launch}
         onToggle={toggle}
@@ -80,7 +99,6 @@ export default function App() {
         setTool={setTool}
         audio={audio}
         setAudio={setAudio}
-        grid={[sim.p.nx, sim.p.ny, sim.p.Lx, sim.p.Ly]}
       />
     </>
   )

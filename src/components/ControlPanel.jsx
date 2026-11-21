@@ -1,25 +1,34 @@
 import { useState } from 'react'
 import { PALETTES, CYCLIC_PALETTES, LINEAR_PALETTES } from '../sim/palettes.js'
 import { SCALES } from '../audio/AmbientEngine.js'
-import { MATERIALS, INITIAL_STATES, SHAPES, PARAM_SPEC, presetParams } from '../sim/Simulation.js'
+import { WORLDS, PHYS_SPEC, B_INPLANE_MAX, worldPhys } from '../sim/Simulation.js'
+import Joystick from './Joystick.jsx'
 
-const MATERIAL_KEYS = new Set(['Ms', 'A', 'K', 'D', 'alpha'])
-
-function NumberField({ spec, value, onChange }) {
-  const [key, label, unit, min, max, step] = spec
+// Curseur : libellé et valeur au-dessus, glissière en dessous.
+function Slider({ label, unit, min, max, step, value, onChange, format }) {
   return (
-    <label className="row">
-      <span className="lbl">{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(key, e.target.value)}
-      />
-      <span className="unit">{unit}</span>
+    <label className="slider">
+      <span className="slider-head">
+        <span>{label}</span>
+        <span className="unit">
+          {format ? format(value) : value} {unit}
+        </span>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
+  )
+}
+
+// Boutons exclusifs (choix du monde, du pôle…).
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="segmented">
+      {options.map(([id, label]) => (
+        <button key={id} className={id === value ? 'on' : ''} onClick={() => onChange(id)}>
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -38,7 +47,9 @@ function Group({ title, children }) {
   )
 }
 
-export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, grid, tool, setTool, audio, setAudio }) {
+const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
+
+export default function ControlPanel({ world, onWorld, phys, setPhys, running, onLaunch, onToggle, view, setView, speed, setSpeed, stats, tool, setTool, audio, setAudio }) {
   // Sur téléphone, le panneau démarre replié pour laisser voir la simulation.
   const [open, setOpen] = useState(() => window.innerWidth > 640)
 
@@ -47,15 +58,9 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
   const paletteId = view[paletteKey]
   const paletteIds = wheel ? CYCLIC_PALETTES : LINEAR_PALETTES
 
-  const set = (key, value) =>
-    setDraft((d) => ({ ...d, [key]: value, ...(MATERIAL_KEYS.has(key) ? { material: 'custom' } : {}) }))
-
-  const choosePreset = (id) => {
-    if (id !== 'custom') setDraft(presetParams(id))
-  }
-
-  const fields = (group) =>
-    PARAM_SPEC[group].map((spec) => <NumberField key={spec[0]} spec={spec} value={draft[spec[0]]} onChange={set} />)
+  const set = (key, value) => setPhys({ ...phys, [key]: value })
+  const bPlane = Math.hypot(phys.Bx, phys.By)
+  const bAngle = Math.round((Math.atan2(phys.By, phys.Bx) * 180) / Math.PI)
 
   return (
     <aside className={'panel' + (open ? '' : ' closed')}>
@@ -73,75 +78,65 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
 
       {open && (
         <div className="body">
-          <Group title="Préréglage">
-            <select value={draft.material} onChange={(e) => choosePreset(e.target.value)}>
-              {Object.entries(MATERIALS).map(([id, m]) => (
-                <option key={id} value={id}>{m.label}</option>
-              ))}
-              <option value="custom">Personnalisé</option>
-            </select>
+          <Group title="Monde">
+            <Segmented options={Object.entries(WORLDS).map(([id, w]) => [id, w.label])} value={world} onChange={onWorld} />
           </Group>
 
-          <Group title="Champ extérieur">{fields('field')}</Group>
-          <Group title="Matériau">{fields('material')}</Group>
-          <Group title="Géométrie">
+          <Group title="Matériau">
+            {PHYS_SPEC.filter(([k]) => k !== 'Bz').map(([key, label, unit, min, max, step]) => (
+              <Slider key={key} label={label} unit={unit} min={min} max={max} step={step} value={phys[key]} format={fmt} onChange={(v) => set(key, v)} />
+            ))}
             <label className="row check">
-              <input type="checkbox" checked={draft.fill} onChange={(e) => set('fill', e.target.checked)} />
-              <span>Plein écran (ratio de la fenêtre)</span>
-            </label>
-            {fields('geometry')}
-            {draft.fill && (
-              <p className="hint">
-                Lx et Nx fixent la taille de cellule ; maillage actuel {grid[0]}×{grid[1]} ({Math.round(grid[2])}×{Math.round(grid[3])} nm)
-              </p>
-            )}
-            <label className="row">
-              <span className="lbl">Forme</span>
-              <select value={draft.shape} onChange={(e) => set('shape', e.target.value)}>
-                {SHAPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </label>
-            <label className="row check">
-              <input type="checkbox" checked={draft.demag} onChange={(e) => set('demag', e.target.checked)} />
-              <span>Champ démagnétisant (FFT, lent)</span>
+              <input type="checkbox" checked={phys.demag} onChange={(e) => set('demag', e.target.checked)} />
+              <span>Champ démagnétisant (plus lent)</span>
             </label>
           </Group>
-          <Group title="État initial">
-            <select value={draft.initial} onChange={(e) => set('initial', e.target.value)}>
-              {INITIAL_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            {fields('seed')}
+
+          <Group title="Champ extérieur">
+            {PHYS_SPEC.filter(([k]) => k === 'Bz').map(([key, label, unit, min, max, step]) => (
+              <Slider key={key} label={label} unit={unit} min={min} max={max} step={step} value={phys[key]} onChange={(v) => set(key, v)} />
+            ))}
+            <div className="joy-row">
+              <Joystick x={phys.Bx} y={phys.By} max={B_INPLANE_MAX} onChange={(Bx, By) => setPhys({ ...phys, Bx, By })} />
+              <div className="joy-info">
+                <span>Dans le plan</span>
+                <span className="unit">{Math.round(bPlane)} mT</span>
+                <span className="unit">{bPlane > 0 ? `${bAngle}°` : '—'}</span>
+                <button onClick={() => setPhys({ ...phys, Bx: 0, By: 0 })} disabled={bPlane === 0}>
+                  Zéro
+                </button>
+              </div>
+            </div>
+            <button className="link" onClick={() => setPhys(worldPhys(world))}>
+              Valeurs par défaut du monde
+            </button>
           </Group>
 
           <Group title="Interaction">
-            <label className="row">
-              <span className="lbl">Toucher</span>
-              <select value={tool.kind} onChange={(e) => setTool({ ...tool, kind: e.target.value })}>
-                <option value="magnet">Aimant</option>
-                <option value="skyrmion">Graine de skyrmion</option>
-              </select>
-            </label>
+            <Segmented
+              options={[
+                ['magnet', 'Aimant'],
+                ['skyrmion', 'Skyrmion'],
+              ]}
+              value={tool.kind}
+              onChange={(kind) => setTool({ ...tool, kind })}
+            />
             {tool.kind === 'magnet' && (
               <>
-                <label className="row">
-                  <span className="lbl">Force</span>
-                  <input type="number" min="0" max="5000" step="100" value={tool.strength} onChange={(e) => setTool({ ...tool, strength: e.target.value })} />
-                  <span className="unit">mT</span>
-                </label>
-                <label className="row">
-                  <span className="lbl">Hauteur</span>
-                  <input type="number" min="1" max="500" step="5" value={tool.height} onChange={(e) => setTool({ ...tool, height: e.target.value })} />
-                  <span className="unit">nm</span>
-                </label>
-                <label className="row">
-                  <span className="lbl">Pôle</span>
-                  <select value={tool.pole} onChange={(e) => setTool({ ...tool, pole: e.target.value })}>
-                    <option value="N">Nord (B ↓)</option>
-                    <option value="S">Sud (B ↑)</option>
-                  </select>
-                </label>
+                <Slider label="Force" unit="mT" min={0} max={5000} step={100} value={Number(tool.strength)} onChange={(strength) => setTool({ ...tool, strength })} />
+                <Segmented
+                  options={[
+                    ['N', 'Nord (B ↓)'],
+                    ['S', 'Sud (B ↑)'],
+                  ]}
+                  value={tool.pole}
+                  onChange={(pole) => setTool({ ...tool, pole })}
+                />
               </>
             )}
+            <p className="hint">
+              {tool.kind === 'magnet' ? 'L’aimant suit la souris, ou le doigt posé sur l’écran' : 'Toucher le film : injecter un skyrmion'}
+            </p>
           </Group>
 
           <Group title="Affichage">
@@ -195,16 +190,11 @@ export default function ControlPanel({ draft, setDraft, dirty, running, onLaunch
           </Group>
 
           <div className="actions">
-            <button className={'primary' + (dirty ? ' dirty' : '')} onClick={onLaunch} title="Relancer (R)">
-              {dirty ? 'Lancer' : 'Relancer'}
+            <button className="primary" onClick={onLaunch} title="Relancer (R)">
+              Relancer
             </button>
             <button onClick={onToggle} title="Pause (Espace)">{running ? 'Pause' : 'Reprendre'}</button>
           </div>
-          <p className="hint">
-            {tool.kind === 'magnet'
-              ? 'L’aimant suit la souris, ou le doigt posé sur l’écran'
-              : 'Toucher le film : injecter un skyrmion'}
-          </p>
         </div>
       )}
     </aside>

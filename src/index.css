@@ -195,10 +195,6 @@ button.primary {
   border-color: #fff;
 }
 
-button.primary.dirty {
-  box-shadow: 0 0 0 1px #000, 0 0 0 2px #fff;
-}
-
 .swatch {
   height: 4px;
   margin: 2px 0 6px 58px;
@@ -215,6 +211,121 @@ button.primary.dirty {
 }
 
 button.play {
+  font-size: 11px;
+}
+
+/* ---- curseurs, choix, joystick ---- */
+
+.slider {
+  display: block;
+  margin: 4px 0 6px;
+}
+
+.slider-head {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider input[type='range'],
+.row input[type='range'] {
+  width: 100%;
+  display: block;
+}
+
+.segmented {
+  display: flex;
+  margin: 4px 0 6px;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 5px 4px;
+  color: var(--dim);
+}
+
+.segmented button + button {
+  border-left: 0;
+}
+
+.segmented button.on {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+.joy-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+
+.joystick {
+  width: 112px;
+  height: 112px;
+  flex: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.joystick:active {
+  cursor: grabbing;
+}
+
+.joystick svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.joy-ring {
+  fill: none;
+  stroke: #333;
+  stroke-width: 1;
+}
+
+.joy-ring.inner {
+  stroke: #1c1c1c;
+}
+
+.joy-axis {
+  stroke: #1c1c1c;
+  stroke-width: 1;
+}
+
+.joy-vec {
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.joy-knob {
+  fill: #fff;
+}
+
+.joy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.joy-info button {
+  margin-top: 6px;
+  align-self: flex-start;
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+button.link {
+  border: 0;
+  padding: 4px 0 0;
+  color: var(--dim);
+  text-decoration: underline;
   font-size: 11px;
 }
 
@@ -287,5 +398,10 @@ button.play {
 
   .swatch {
     margin-left: 74px;
+  }
+
+  .joystick {
+    width: 140px;
+    height: 140px;
   }
 }

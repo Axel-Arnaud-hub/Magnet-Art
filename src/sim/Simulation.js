@@ -4,81 +4,52 @@ import { FilmCore } from './FilmCore.js'
 import { TAU, clamp } from './math.js'
 
 // Unités : Ms kA/m, A pJ/m, K kJ/m³, D mJ/m², B mT, longueurs nm.
-export const MATERIALS = {
-  // Co/Pt effectif : K ≈ Ku − μ0Ms²/2, sans magnétostatique (rapide).
-  sky: { label: 'Co/Pt — skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, initial: 'skyrmion' },
-  // Même système, champ démagnétisant FFT film mince (plus lent).
-  skyfft: { label: 'Co/Pt — skyrmion + FFT', Ms: 580, A: 15, K: 800, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: true, radius: 25, initial: 'skyrmion' },
-  // Co/Pt : paramètres de simulation publiés.
-  cop: { label: 'Co/Pt', Ms: 580, A: 15, K: 800, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 30, initial: 'random' },
-  // Permalloy, µMAG standard problem #4.
-  py: { label: 'Permalloy (µMAG #4)', Ms: 800, A: 13, K: 0, D: 0, alpha: 0.02, thick: 3, Lx: 500, Ly: 125, nx: 96, ny: 24, Bx: 0, By: 0, Bz: 0, demag: true, radius: 30, initial: 'random' },
+// Trois « mondes » ; seuls A, K, D, B et le champ démagnétisant sont réglables.
+export const WORLDS = {
+  // DMI au-delà du seuil Dc = 4√(AK)/π ≈ 3.8 mJ/m² : parois d'énergie négative,
+  // le film se remplit de domaines en labyrinthe.
+  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 15, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random' },
+  // Co/Pt effectif (K ≈ Ku − μ0Ms²/2) sous faible champ : skyrmion isolé.
+  skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion' },
+  // Disque de permalloy : la magnétostatique enroule l'aimantation en vortex.
+  vortex: { label: 'Vortex', Ms: 800, A: 13, K: 0, D: 0, alpha: 0.05, thick: 10, Lx: 200, Ly: 200, nx: 48, ny: 48, Bx: 0, By: 0, Bz: 0, demag: true, radius: 25, shape: 'disk', fill: false, initial: 'vortex' },
 }
 
-export const INITIAL_STATES = [
-  ['skyrmion', 'Skyrmion central'],
-  ['random', 'Aléatoire'],
-  ['up', 'Uniforme +z'],
-  ['inplane', 'Uniforme +x'],
-  ['stripes', 'Bandes'],
+// Paramètres réglables en direct : [clé, libellé, unité, min, max, pas]
+export const PHYS_SPEC = [
+  ['A', 'Échange', 'pJ/m', 1, 40, 0.5],
+  ['K', 'Anisotropie', 'kJ/m³', -300, 1500, 10],
+  ['D', 'DMI', 'mJ/m²', -6, 6, 0.1],
+  ['Bz', 'Hors plan (Bz)', 'mT', -500, 500, 5],
 ]
+// Rayon du joystick (champ dans le plan, mT).
+export const B_INPLANE_MAX = 200
 
-export const SHAPES = [
-  ['rectangle', 'Rectangle'],
-  ['disk', 'Disque'],
-]
+export const PHYS_KEYS = ['A', 'K', 'D', 'Bx', 'By', 'Bz', 'demag']
 
-// Définition des paramètres numériques : [clé, libellé, unité, min, max, pas]
-export const PARAM_SPEC = {
-  geometry: [
-    ['Lx', 'Lx', 'nm', 30, 2000, 10],
-    ['Ly', 'Ly', 'nm', 30, 2000, 10],
-    ['thick', 't', 'nm', 0.5, 100, 0.5],
-    ['nx', 'Nx', '', 12, 128, 1],
-    ['ny', 'Ny', '', 12, 128, 1],
-  ],
-  material: [
-    ['Ms', 'Ms', 'kA/m', 10, 2500, 10],
-    ['A', 'A', 'pJ/m', 0.1, 100, 0.1],
-    ['K', 'K', 'kJ/m³', -2000, 3000, 10],
-    ['D', 'D', 'mJ/m²', -10, 10, 0.1],
-    ['alpha', 'α', '', 0, 1, 0.01],
-  ],
-  field: [
-    ['Bx', 'Bx', 'mT', -1000, 1000, 5],
-    ['By', 'By', 'mT', -1000, 1000, 5],
-    ['Bz', 'Bz', 'mT', -1000, 1000, 5],
-  ],
-  seed: [['radius', 'Rayon', 'nm', 5, 180, 5]],
+export function worldPhys(id) {
+  const w = WORLDS[id]
+  return Object.fromEntries(PHYS_KEYS.map((k) => [k, w[k]]))
 }
 
-export function presetParams(id) {
-  const rest = { ...MATERIALS[id] }
-  delete rest.label
-  return { material: id, shape: 'rectangle', fill: true, ...rest }
-}
-
-export const DEFAULT_PARAMS = presetParams('sky')
-
-// Ramène chaque paramètre numérique dans son domaine valide.
+// Ramène les paramètres réglables dans leur domaine valide.
 export function sanitize(raw) {
   const p = { ...raw }
-  for (const group of Object.values(PARAM_SPEC)) {
-    for (const [key, , , min, max] of group) {
-      const v = Number(p[key])
-      p[key] = Number.isFinite(v) ? clamp(v, min, max) : DEFAULT_PARAMS[key]
-    }
+  for (const [key, , , min, max] of PHYS_SPEC) {
+    const v = Number(p[key])
+    p[key] = Number.isFinite(v) ? clamp(v, min, max) : 0
   }
-  p.nx = Math.floor(p.nx)
-  p.ny = Math.floor(p.ny)
+  for (const key of ['Bx', 'By']) {
+    const v = Number(p[key])
+    p[key] = Number.isFinite(v) ? clamp(v, -B_INPLANE_MAX, B_INPLANE_MAX) : 0
+  }
   p.demag = !!p.demag
   return p
 }
 
 // Adapte le film au rapport hauteur/largeur de l'écran : même taille de cellule
 // (Lx/Nx) et à peu près le même nombre de cellules, pour un coût de calcul inchangé.
-export function fitToAspect(raw, aspect) {
-  const p = sanitize(raw)
+export function fitToAspect(p, aspect) {
   const cell = p.Lx / p.nx
   const n = p.nx * p.ny
   let nx = Math.round(Math.sqrt(n / aspect))
@@ -126,18 +97,44 @@ export class Simulation {
       c.disk = { rx: (r * nx) / p.Lx, ry: (r * ny) / p.Ly }
     }
     c.Ms = p.Ms * 1e3
+    c.alpha.fill(p.alpha)
+    this.core = c
+    this.nx = nx
+    this.ny = ny
+    this.applyPhysics()
+  }
+
+  applyPhysics() {
+    const p = this.p
+    const c = this.core
     c.A = p.A * 1e-12
     c.Kc = p.K * 1e3
     c.D = p.D * 1e-3
-    c.alpha.fill(p.alpha)
     c.Bx = p.Bx * 1e-3
     c.By = p.By * 1e-3
     c.Bz = p.Bz * 1e-3
     c.prepare()
-    this.core = c
-    this.nx = nx
-    this.ny = ny
     this.lex = Math.sqrt((2 * c.A) / (4e-7 * Math.PI * c.Ms * c.Ms))
+  }
+
+  // Modifie A, K, D, B ou le champ démagnétisant sans réinitialiser
+  // l'aimantation : la configuration actuelle évolue sous les nouveaux paramètres.
+  setPhysics(raw) {
+    const next = sanitize({ ...this.p, ...raw })
+    const rebuild = next.demag !== this.p.demag
+    this.p = next
+    if (!rebuild) {
+      this.applyPhysics()
+      return
+    }
+    // Le noyau FFT n'existe que si demag est actif à la construction.
+    const old = this.core
+    this.build()
+    const c = this.core
+    c.mx.set(old.mx)
+    c.my.set(old.my)
+    c.mz.set(old.mz)
+    c.invalidate()
   }
 
   init(kind) {
@@ -158,6 +155,20 @@ export class Simulation {
       }
     } else if (kind === 'random') {
       c.randomize()
+    } else if (kind === 'vortex') {
+      // Enroulement dans le plan autour du centre, cœur hors du plan (+z).
+      const core = Math.max(this.lex, c.dx) * 1.5
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const id = j * nx + i
+          const x = (i + 0.5 - nx / 2) * c.dx
+          const y = (j + 0.5 - ny / 2) * c.dy
+          const r = Math.hypot(x, y)
+          c.mx[id] = -y
+          c.my[id] = x
+          c.mz[id] = 2 * core * Math.exp(-(r * r) / (core * core))
+        }
+      }
     }
     c.normalizeAll()
     if (kind === 'skyrmion') this.placeSeed(nx / 2, ny / 2)
@@ -242,7 +253,8 @@ export class Simulation {
       this.t += dt
       adv += dt
       k++
-      if ((k & 3) === 0 && performance.now() - t0 > 11) break
+      // Avec la FFT une étape coûte cher : on vérifie le budget à chaque fois.
+      if ((c.demagOn || (k & 3) === 0) && performance.now() - t0 > 11) break
     }
   }
 
