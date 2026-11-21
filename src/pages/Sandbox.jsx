@@ -3,7 +3,7 @@ import FieldCanvas from '../components/FieldCanvas.jsx'
 import ControlPanel from '../components/ControlPanel.jsx'
 import { WORLDS, Simulation, fitToAspect, worldPhys } from '../sim/Simulation.js'
 import { AmbientEngine } from '../audio/AmbientEngine.js'
-import { PhoneMagnetometer } from '../sensors/PhoneMagnetometer.js'
+import { PhyphoxSource } from '../sensors/PhyphoxSource.js'
 
 const DEFAULT_WORLD = 'skyrmion'
 
@@ -19,7 +19,7 @@ export default function Sandbox() {
   const [phys, setPhysState] = useState(() => worldPhys(DEFAULT_WORLD))
   const [sim, setSim] = useState(() => makeSim(DEFAULT_WORLD, worldPhys(DEFAULT_WORLD)))
   const [running, setRunning] = useState(true)
-  const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: false })
+  const [view, setView] = useState({ mode: 'wheel', wheelPalette: 'hsl', linearPalette: 'redblue', arrows: WORLDS[DEFAULT_WORLD].arrows })
   const [speed, setSpeed] = useState(1)
   // Interaction au toucher : graine de skyrmion (clic) ou aimant (suit le pointeur).
   const [tool, setTool] = useState({ kind: 'magnet', strength: 2500, height: 30, pole: 'N' })
@@ -39,24 +39,33 @@ export default function Sandbox() {
     else if (!next.on && e.wanted) await e.stop()
   }, [])
 
-  // Magnétomètre du téléphone : sa perturbation (champ moins champ ambiant)
-  // s'ajoute au champ extérieur, amplifiée : gain = mT simulés par mT réel.
+  // Magnétomètre d'un téléphone, en direct via phyphox : sa perturbation
+  // (champ moins champ ambiant) s'ajoute au champ extérieur, amplifiée
+  // (gain = mT simulés par mT réel).
   const mag = useRef(null)
-  const [phone, setPhoneState] = useState({ on: false, gain: 100, status: '' })
+  const [phone, setPhoneState] = useState(() => ({
+    on: false,
+    address: localStorage.getItem('phyphox-address') || '',
+    gain: 100,
+    status: '',
+  }))
   const [phoneDelta, setPhoneDelta] = useState([0, 0, 0])
 
   const setPhone = useCallback((next) => {
     if (next.on && !mag.current) {
-      mag.current = new PhoneMagnetometer((status) => setPhoneState((p) => ({ ...p, status })))
-      mag.current.start()
+      localStorage.setItem('phyphox-address', next.address)
+      mag.current = new PhyphoxSource(next.address, (status) => setPhoneState((p) => ({ ...p, status })))
+      mag.current.connect()
     } else if (!next.on && mag.current) {
       mag.current.stop()
       mag.current = null
+      setPhoneDelta([0, 0, 0])
     }
     setPhoneState((p) => ({ ...next, status: next.on ? p.status : '' }))
   }, [])
 
   const recalibrate = useCallback(() => mag.current?.recalibrate(), [])
+  const startMeasure = useCallback(() => mag.current?.startMeasure(), [])
 
   useEffect(() => {
     if (!phone.on) {
@@ -88,6 +97,7 @@ export default function Sandbox() {
     setWorld(id)
     setPhysState(p)
     setSim(makeSim(id, p))
+    setView((v) => ({ ...v, arrows: WORLDS[id].arrows }))
     setRunning(true)
   }, [])
 
@@ -151,6 +161,7 @@ export default function Sandbox() {
         setPhone={setPhone}
         phoneDelta={phoneDelta}
         onRecalibrate={recalibrate}
+        onStartMeasure={startMeasure}
       />
     </>
   )

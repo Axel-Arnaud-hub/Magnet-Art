@@ -5,14 +5,16 @@ import { TAU, clamp } from './math.js'
 
 // Unités : Ms kA/m, A pJ/m, K kJ/m³, D mJ/m², B mT, longueurs nm.
 // Trois « mondes » ; seuls A, K, D, B et le champ démagnétisant sont réglables.
+// arrows : flèches affichées par défaut en arrivant dans le monde (la case
+// « Flèches » du panneau reste modifiable ensuite).
 export const WORLDS = {
   // DMI au-delà du seuil Dc = 4√(AK)/π ≈ 3.8 mJ/m² : parois d'énergie négative,
   // le film se remplit de domaines en labyrinthe.
-  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 15, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random' },
+  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 15, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random', arrows: false },
   // Co/Pt effectif (K ≈ Ku − μ0Ms²/2) sous faible champ : skyrmion isolé.
-  skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion' },
+  skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion', arrows: false },
   // Disque de permalloy : la magnétostatique enroule l'aimantation en vortex.
-  vortex: { label: 'Vortex', Ms: 800, A: 13, K: 0, D: 0, alpha: 0.05, thick: 10, Lx: 200, Ly: 200, nx: 48, ny: 48, Bx: 0, By: 0, Bz: 0, demag: true, radius: 25, shape: 'disk', fill: false, initial: 'vortex' },
+  vortex: { label: 'Vortex', Ms: 800, A: 13, K: 0, D: 0, alpha: 0.05, thick: 10, Lx: 200, Ly: 200, nx: 48, ny: 48, Bx: 0, By: 0, Bz: 0, demag: true, radius: 25, shape: 'disk', fill: false, initial: 'vortex', arrows: true },
 }
 
 // Paramètres réglables en direct : [clé, libellé, unité, min, max, pas]

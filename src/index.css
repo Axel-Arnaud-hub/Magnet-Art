@@ -345,6 +345,18 @@ button:disabled {
   cursor: default;
 }
 
+.phy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 6px;
+}
+
+.phy-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 .mag-read {
   font-variant-numeric: tabular-nums;
   margin: 4px 0 6px;
