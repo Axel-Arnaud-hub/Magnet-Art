@@ -9,7 +9,8 @@
 // Valeurs mesurées (scénarios de calibration, 64 à 85 cellules de large) :
 //   skyrmion isolé          planar 0,04  texture 0,013
 //   bulles sous fort champ  planar 0,06  texture 0,03
-//   labyrinthe              planar 0,30  texture 0,14 à 0,40
+//   labyrinthe (A = 15)     planar 0,30  texture 0,14 à 0,40
+//   labyrinthe fin (A = 3)  planar 0,44  texture 1,7
 //   labyrinthe qui se couche (K < 0)    planar 0,60  texture 0,16
 //   vortex                  planar 1,00  texture 0,014
 //   uniforme dans le plan   planar 1,00  texture 0
@@ -28,7 +29,7 @@ const smooth = (a, b, x) => {
 
 // Poids des trois archétypes (somme 1).
 export function soundMap(f) {
-  const v = smooth(0.45, 0.85, f.planar ?? 0)
+  const v = smooth(0.5, 0.85, f.planar ?? 0)
   const l = smooth(0.04, 0.15, f.texture ?? 0)
   return { skyrmion: (1 - v) * (1 - l), labyrinth: (1 - v) * l, vortex: v }
 }

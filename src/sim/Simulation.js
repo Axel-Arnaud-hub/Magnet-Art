@@ -8,11 +8,18 @@ import { TAU, clamp } from './math.js'
 // arrows : flèches affichées par défaut en arrivant dans le monde (la case
 // « Flèches » du panneau reste modifiable ensuite).
 export const WORLDS = {
-  // DMI au-delà du seuil Dc = 4√(AK)/π ≈ 3.8 mJ/m² : parois d'énergie négative,
-  // le film se remplit de domaines en labyrinthe.
-  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 15, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random', arrows: false },
+  // DMI au-delà du seuil Dc = 4√(AK)/π ≈ 1,7 mJ/m² : parois d'énergie négative,
+  // le film se remplit de domaines en labyrinthe. Échange faible (A = 3) :
+  // bandes fines, d'environ 10 nm (3 cellules).
+  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 3, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random', arrows: false },
   // Co/Pt effectif (K ≈ Ku − μ0Ms²/2) sous faible champ : skyrmion isolé.
   skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion', arrows: false },
+  // Paroi de domaine dans un ruban (comme le tutoriel « Domaines et parois ») :
+  // une seule rangée de 160 cellules de 3 nm. À gauche le domaine ↑, à droite
+  // le domaine ↓. Le champ Bz pousse la paroi ; D la rend de type Néel. Vue
+  // dédiée (view: 'wall') : ruban vu de dessus et flèches vues de côté.
+  // Sans champ démagnétisant (noDemag) : inutile et très coûteux en 1D.
+  wall: { label: 'Paroi', Ms: 580, A: 15, K: 500, D: 2, alpha: 0.3, thick: 1, Lx: 480, Ly: 3, nx: 160, ny: 1, Bx: 0, By: 0, Bz: 10, demag: false, radius: 25, shape: 'rectangle', fill: false, initial: 'wall', arrows: false, view: 'wall', noDemag: true },
   // Disque de permalloy : la magnétostatique enroule l'aimantation en vortex.
   vortex: { label: 'Vortex', Ms: 800, A: 13, K: 0, D: 0, alpha: 0.05, thick: 10, Lx: 200, Ly: 200, nx: 48, ny: 48, Bx: 0, By: 0, Bz: 0, demag: true, radius: 25, shape: 'disk', fill: false, initial: 'vortex', arrows: true },
 }
@@ -45,7 +52,7 @@ export function sanitize(raw) {
     const v = Number(p[key])
     p[key] = Number.isFinite(v) ? clamp(v, -B_INPLANE_MAX, B_INPLANE_MAX) : 0
   }
-  p.demag = !!p.demag
+  p.demag = !!p.demag && !p.noDemag
   return p
 }
 
@@ -180,6 +187,20 @@ export class Simulation {
       }
     } else if (kind === 'random') {
       c.randomize()
+    } else if (kind === 'wall') {
+      // Paroi au tiers du ruban : ↑ à gauche, ↓ à droite (profil en tanh).
+      const w = Math.max(this.lex, Math.sqrt(c.A / Math.max(c.Kc, 1e3)))
+      const x0 = 0.3 * nx * c.dx
+      for (let i = 0; i < nx; i++) {
+        const u = ((i + 0.5) * c.dx - x0) / w
+        for (let j = 0; j < ny; j++) {
+          const id = j * nx + i
+          c.mz[id] = -Math.tanh(u)
+          c.my[id] = 1 / Math.cosh(u)
+          c.mx[id] = 0
+        }
+      }
+      this.wallHist = []
     } else if (kind === 'vortex') {
       // Enroulement dans le plan autour du centre, cœur hors du plan (+z).
       const core = Math.max(this.lex, c.dx) * 1.5
@@ -280,6 +301,70 @@ export class Simulation {
       k++
       // Avec la FFT une étape coûte cher : on vérifie le budget à chaque fois.
       if ((c.demagOn || (k & 3) === 0) && performance.now() - t0 > 11) break
+    }
+  }
+
+  // Mesures sur la paroi du monde « Paroi » (première rangée du ruban).
+  // xw : position (nm) où mz change de signe, ou null si la paroi est sortie ;
+  // width : Δ = √(A/K) (nm) ; v : vitesse (m/s, sur ~0,3 ns simulées) ;
+  // type : Néel (rotation dans le plan x–z, favorisée par D), Bloch (dans le
+  // plan y–z), intermédiaire, ou « en précession » : sans DMI ni anisotropie
+  // dans le plan, rien ne fixe l'angle interne φ de la paroi ; poussée par un
+  // champ, elle tourne sur elle-même (φ défile) et avance beaucoup moins vite.
+  // Alertes si D dépasse le seuil Dc = 4√(AK)/π
+  // (la paroi n'est plus stable) ou si la paroi est plus fine qu'une cellule.
+  wallInfo() {
+    const c = this.core
+    const { nx } = this
+    const mz = c.mz
+    let xw = null
+    let ic = 0
+    for (let i = 0; i < nx - 1; i++) {
+      if ((mz[i] > 0) !== (mz[i + 1] > 0)) {
+        const f = mz[i] / (mz[i] - mz[i + 1])
+        xw = (i + 0.5 + f) * c.dx
+        ic = f < 0.5 ? i : i + 1
+        break
+      }
+    }
+    // Historique sur ~0,3 ns simulées : [t, position, angle φ déroulé].
+    const h = (this.wallHist = this.wallHist || [])
+    let v = null
+    let spin = 0
+    let type = null
+    if (xw !== null) {
+      let phi = Math.atan2(c.my[ic], c.mx[ic])
+      if (h.length) {
+        const prev = h[h.length - 1][2]
+        phi += 2 * Math.PI * Math.round((prev - phi) / (2 * Math.PI))
+      }
+      h.push([this.t, xw, phi])
+      while (h.length > 2 && h[h.length - 1][0] - h[0][0] > 0.3e-9) h.shift()
+      const [t0, x0, p0] = h[0]
+      if (this.t - t0 > 0.05e-9) {
+        v = (xw - x0) / (this.t - t0)
+        spin = (phi - p0) / (this.t - t0)
+      }
+      const ip = Math.hypot(c.mx[ic], c.my[ic])
+      if (Math.abs(spin) > 0.5e9) type = 'en précession'
+      else if (ip > 0.3) {
+        const cx = Math.abs(c.mx[ic]) / ip
+        type = cx > 0.85 ? 'Néel' : cx < 0.53 ? 'Bloch' : 'intermédiaire'
+      }
+    } else h.length = 0
+    const K = c.Kc
+    const width = K > 0 ? Math.sqrt(c.A / K) : null
+    const Dc = K > 0 ? (4 / Math.PI) * Math.sqrt(c.A * K) : 0
+    return {
+      xw: xw === null ? null : xw * 1e9,
+      length: nx * c.dx * 1e9,
+      width: width === null ? null : width * 1e9,
+      v,
+      type,
+      unstable: K > 0 && Math.abs(c.D) > Dc,
+      tooThin: width !== null && width < 1.2 * c.dx,
+      inPlane: K <= 0,
+      Dc: Dc * 1e3,
     }
   }
 

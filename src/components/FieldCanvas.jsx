@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { GLRenderer } from '../sim/glRenderer.js'
 import { CpuRenderer, ComponentScale, computeLayout, drawArrows, toCell } from '../sim/renderer.js'
+import { drawWall } from '../sim/wallView.js'
 
 // Paramètres de l'aimant pour Simulation.setMagnet ; position en cellules
 // (sans borne : un aimant hors du film agit encore sur ses bords).
@@ -80,20 +81,27 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats, 
       last = now
       if (sim) {
         const core = sim.core
+        // Monde « Paroi » : vue dédiée (ruban + flèches vues de côté), sans
+        // geste dans l'image. Le calque du dessus, opaque, cache le rendu WebGL.
+        const wallView = sim.p.view === 'wall'
         lay = computeLayout(core.nx, core.ny, W, H, sim.p.fill)
-        const magnet = tool.kind === 'magnet' && pointer ? magnetAt(tool, pointer, lay) : null
+        const magnet = !wallView && tool.kind === 'magnet' && pointer ? magnetAt(tool, pointer, lay) : null
         sim.setMagnet(magnet)
         if (running) sim.advance(dtReal, speed)
-        const palette = view.mode === 'wheel' ? view.wheelPalette : view.linearPalette
-        const opts = { mode: view.mode, palette, vmax: scale.update(core, view.mode) }
-        if (gl) {
-          gl.render(core, lay, dpr, opts)
-          octx.clearRect(0, 0, W, H)
+        if (wallView) {
+          drawWall(octx, core, sim.wallInfo(), W, H)
         } else {
-          cpu.render(core, lay, W, H, opts)
+          const palette = view.mode === 'wheel' ? view.wheelPalette : view.linearPalette
+          const opts = { mode: view.mode, palette, vmax: scale.update(core, view.mode) }
+          if (gl) {
+            gl.render(core, lay, dpr, opts)
+            octx.clearRect(0, 0, W, H)
+          } else {
+            cpu.render(core, lay, W, H, opts)
+          }
+          if (view.arrows) drawArrows(octx, core, lay)
+          if (magnet) drawMagnet(octx, pointer, (magnet.height * 1e-9 * lay.s) / core.dx)
         }
-        if (view.arrows) drawArrows(octx, core, lay)
-        if (magnet) drawMagnet(octx, pointer, (magnet.height * 1e-9 * lay.s) / core.dx)
         if (now - lastStats > 200) {
           lastStats = now
           onStats(sim.computeStats())
@@ -117,7 +125,7 @@ export default function FieldCanvas({ sim, running, view, speed, tool, onStats, 
     // Souris : l'aimant suit le curseur sans clic. Doigt / stylet : tant qu'il touche l'écran.
     const onDown = (e) => {
       const { sim, tool } = live.current
-      if (!sim || !lay) return
+      if (!sim || !lay || sim.p.view === 'wall') return
       if (tool.kind === 'magnet') {
         pointer = pos(e)
         if (e.pointerType !== 'mouse') overlay.setPointerCapture(e.pointerId)

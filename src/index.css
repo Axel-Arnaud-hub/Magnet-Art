@@ -272,6 +272,15 @@ a.home:hover {
   border-left: 0;
 }
 
+.segmented.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.segmented.grid button + button {
+  border-left: 1px solid var(--line);
+}
+
 .segmented button.on {
   background: #fff;
   color: #000;

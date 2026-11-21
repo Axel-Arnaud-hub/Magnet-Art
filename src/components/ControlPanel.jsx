@@ -20,9 +20,9 @@ function Slider({ label, unit, min, max, step, value, onChange, format }) {
 }
 
 // Boutons exclusifs (choix du monde, du pôle…).
-function Segmented({ options, value, onChange }) {
+function Segmented({ options, value, onChange, grid }) {
   return (
-    <div className="segmented">
+    <div className={'segmented' + (grid ? ' grid' : '')}>
       {options.map(([id, label]) => (
         <button key={id} className={id === value ? 'on' : ''} onClick={() => onChange(id)}>
           {label}
@@ -59,6 +59,8 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
   const paletteIds = wheel ? CYCLIC_PALETTES : LINEAR_PALETTES
 
   const set = (key, value) => setPhys({ ...phys, [key]: value })
+  // Monde « Paroi » : vue dédiée, sans geste dans l'image ni réglages de rendu.
+  const wallWorld = WORLDS[world].view === 'wall'
   const bPlane = Math.hypot(phys.Bx, phys.By)
   const bAngle = Math.round((Math.atan2(phys.By, phys.Bx) * 180) / Math.PI)
 
@@ -85,17 +87,25 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
       {open && (
         <div className="body">
           <Group title="Monde">
-            <Segmented options={Object.entries(WORLDS).map(([id, w]) => [id, w.label])} value={world} onChange={onWorld} />
+            <Segmented options={Object.entries(WORLDS).map(([id, w]) => [id, w.label])} value={world} onChange={onWorld} grid />
+            {wallWorld && (
+              <p className="hint">
+                Une paroi entre un domaine ↑ et un domaine ↓, dans un ruban de 480 nm. Le champ Bz la pousse ; D la rend de type Néel. « Relancer » la remet au
+                départ.
+              </p>
+            )}
           </Group>
 
           <Group title="Matériau">
             {PHYS_SPEC.filter(([k]) => k !== 'Bz').map(([key, label, unit, min, max, step]) => (
               <Slider key={key} label={label} unit={unit} min={min} max={max} step={step} value={phys[key]} format={fmt} onChange={(v) => set(key, v)} />
             ))}
-            <label className="row check">
-              <input type="checkbox" checked={phys.demag} onChange={(e) => set('demag', e.target.checked)} />
-              <span>Champ démagnétisant (plus lent)</span>
-            </label>
+            {!WORLDS[world].noDemag && (
+              <label className="row check">
+                <input type="checkbox" checked={phys.demag} onChange={(e) => set('demag', e.target.checked)} />
+                <span>Champ démagnétisant (plus lent)</span>
+              </label>
+            )}
           </Group>
 
           <Group title="Champ extérieur">
@@ -156,6 +166,7 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
             )}
           </Group>
 
+          {!wallWorld && (
           <Group title="Interaction">
             <Segmented
               options={[
@@ -182,8 +193,11 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
               {tool.kind === 'magnet' ? 'L’aimant suit la souris, ou le doigt posé sur l’écran' : 'Toucher le film : injecter un skyrmion'}
             </p>
           </Group>
+          )}
 
           <Group title="Affichage">
+            {!wallWorld && (
+            <>
             <label className="row">
               <span className="lbl">Voir</span>
               <select value={view.mode} onChange={(e) => setView({ ...view, mode: e.target.value })}>
@@ -204,6 +218,8 @@ export default function ControlPanel({ world, onWorld, phys, setPhys, running, o
               <input type="checkbox" checked={view.arrows} onChange={(e) => setView({ ...view, arrows: e.target.checked })} />
               <span>Flèches</span>
             </label>
+            </>
+            )}
             <label className="row">
               <span className="lbl">Vitesse</span>
               <input type="range" min="0.1" max="4" step="0.1" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
