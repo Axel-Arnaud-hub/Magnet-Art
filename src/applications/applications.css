@@ -423,3 +423,33 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- espacements un peu plus aérés (surcharge des valeurs ci-dessus) ---- */
+
+.application-cards { gap: 32px; margin-top: 56px; }
+.workshop-head { margin: 24px 0 32px; }
+.workshop-grid { gap: 32px 48px; }
+.track-header { margin-bottom: 16px; }
+.track-bits { gap: 6px; }
+.track-caption { margin-top: 16px; }
+.workshop-controls h2, .workshop-end h2 { margin-bottom: 14px; }
+.guide-question { margin-top: 20px; }
+.guide-options, .workshop-trials { gap: 12px; margin-bottom: 12px; }
+.workshop-actions { gap: 12px; margin-top: 12px; }
+.guide-foot { gap: 12px; margin-top: 20px; }
+.guide-explain { margin-top: 20px; }
+.app-explain { margin: 32px 0; }
+.app-explain p { margin-bottom: 12px; }
+.disk-steps { gap: 12px; margin: 16px 0; }
+.disk-media { margin-bottom: 16px; }
+.disk-laser-experiment { margin: 16px 0; }
+.speaker-modes, .speaker-current, .speaker-actions { gap: 10px; }
+.speaker-controls h2 { margin-top: 18px; }
+.speaker-controls p { margin-bottom: 14px; }
+.speaker-magnet-grid { gap: 24px; margin-top: 12px; }
+
+@media (max-width: 760px) {
+  .application-cards, .workshop-grid { gap: 16px; }
+  .application-cards { margin-top: 32px; }
+  .workshop-head { margin: 8px 0 24px; }
+}

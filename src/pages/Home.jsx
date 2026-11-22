@@ -14,7 +14,6 @@ export default function Home() {
   return (
     <Layout current="accueil">
       <div className="welcome-head">
-        <p className="kicker">MAGNÉTISME · NANOMÈTRES · MÉMOIRE</p>
         <h1>Un aimant, ça se voit, ça se tord, et ça se souvient.</h1>
         <p className="lead">
           Attrape l’aimant : la limaille dessine son champ invisible. Ensuite, descends à l’échelle du nanomètre, là où ton disque dur range tes données.
