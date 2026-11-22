@@ -4,7 +4,7 @@
 // interpolation bicubique (Catmull-Rom, 4×4 cellules), le renormalise (|m| = 1),
 // puis le convertit en couleur via une palette (texture 256×1).
 import { buildLut, LUT_SIZE, PALETTES } from './palettes.js'
-import { MZ_SHADE } from './renderer.js'
+import { MZ_SHADE, MZ_SHARP } from './renderer.js'
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -70,15 +70,17 @@ void main() {
   }
   float len = length(acc.xyz);
   vec3 m = len > 1e-6 ? acc.xyz / len : vec3(0.0, 0.0, 1.0);
+  // Courbe en S sur mz (MZ_SHARP, renderer.js) : parois plus fines à l'écran.
+  float mzs = ${MZ_SHARP > 0 ? `tanh(${MZ_SHARP.toFixed(3)} * m.z) / ${Math.tanh(MZ_SHARP).toFixed(6)}` : 'm.z'};
 
   vec3 c;
   if (uMode == 0) {
     float phi = fract(atan(m.y, m.x) / TAU);
     c = texture(uLut, vec2(phi, 0.5)).rgb;
-    float z = m.z * ${MZ_SHADE.toFixed(3)};
+    float z = mzs * ${MZ_SHADE.toFixed(3)};
     c = z > 0.0 ? mix(c, vec3(1.0), z) : mix(c, vec3(0.0), -z);
   } else {
-    float v = uMode == 1 ? m.x : (uMode == 2 ? m.y : m.z);
+    float v = uMode == 1 ? m.x : (uMode == 2 ? m.y : mzs);
     float t = clamp(v / uVmax * 0.5 + 0.5, 0.0, 1.0);
     c = texture(uLut, vec2(t * uLutScale + uLutOffset, 0.5)).rgb;
   }

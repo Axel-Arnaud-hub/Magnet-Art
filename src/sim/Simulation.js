@@ -11,9 +11,9 @@ export const WORLDS = {
   // DMI au-delà du seuil Dc = 4√(AK)/π ≈ 1,7 mJ/m² : parois d'énergie négative,
   // le film se remplit de domaines en labyrinthe. Échange faible (A = 3) :
   // bandes fines, d'environ 10 nm (3 cellules).
-  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 3, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'random', arrows: false },
+  labyrinth: { label: 'Labyrinthe', Ms: 580, A: 3, K: 600, D: 4.2, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 0, demag: true, radius: 25, shape: 'rectangle', fill: true, initial: 'random', arrows: false },
   // Co/Pt effectif (K ≈ Ku − μ0Ms²/2) sous faible champ : skyrmion isolé.
-  skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: false, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion', arrows: false },
+  skyrmion: { label: 'Skyrmion', Ms: 580, A: 15, K: 600, D: 3.5, alpha: 0.3, thick: 1, Lx: 192, Ly: 192, nx: 64, ny: 64, Bx: 0, By: 0, Bz: 20, demag: true, radius: 25, shape: 'rectangle', fill: true, initial: 'skyrmion', arrows: false },
   // Paroi de domaine dans un ruban (comme le tutoriel « Domaines et parois ») :
   // une seule rangée de 160 cellules de 3 nm. À gauche le domaine ↑, à droite
   // le domaine ↓. Le champ Bz pousse la paroi ; D la rend de type Néel. Vue
@@ -435,7 +435,8 @@ export class Simulation {
       planar: planar / n,
       // texture : ⟨|∇m|²⟩ par cellule, 0 pour tout état uniforme.
       texture: texture / n,
-      Q: this.stats ? this.stats.Q : 0,
+      // Charge topologique (≈ nombre de skyrmions), recalculée à chaque mesure.
+      Q: c.topoCharge(),
       // Temps simulé : s'il recule, la simulation a été relancée.
       simTime: this.t,
     }

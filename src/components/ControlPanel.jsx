@@ -126,7 +126,7 @@ export default function ControlPanel({
             {!WORLDS[world].noDemag && (
               <label className="row check">
                 <input type="checkbox" checked={phys.demag} onChange={(e) => set('demag', e.target.checked)} />
-                <span>Champ démagnétisant (plus lent)</span>
+                <span>Champ démagnétisant</span>
               </label>
             )}
           </Group>

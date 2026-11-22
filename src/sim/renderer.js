@@ -5,6 +5,13 @@ import { buildLut, LUT_SIZE } from './palettes.js'
 // Mélange vers le blanc (mz > 0) ou le noir (mz < 0) pour le mode direction.
 export const MZ_SHADE = 0.92
 
+// Netteté des parois : courbe en S sur mz (affichage seulement, la physique
+// n'est pas touchée). La bande de transition entre ↑ et ↓ se resserre à
+// l'écran. 0 = désactivé ; vers 2,5 les parois paraissent nettement plus fines.
+export const MZ_SHARP = 2.5
+const SHARP_NORM = Math.tanh(MZ_SHARP)
+export const sharpMz = (z) => (MZ_SHARP > 0 ? Math.tanh(MZ_SHARP * z) / SHARP_NORM : z)
+
 // Position du film à l'écran, en pixels CSS. cover : remplit tout l'écran.
 // Sur téléphone (≤ 640 px, panneau en bas), un film qui ne remplit pas l'écran
 // est collé en haut, avec la même marge qu'à gauche et à droite.
@@ -149,7 +156,8 @@ export class CpuRenderer {
         }
         let r, g, b
         if (comp) {
-          const t = clamp((comp[id] / opts.vmax) * 0.5 + 0.5, 0, 1)
+          const v = comp === mz ? sharpMz(mz[id]) : comp[id]
+          const t = clamp((v / opts.vmax) * 0.5 + 0.5, 0, 1)
           const k = Math.round(t * (LUT_SIZE - 1)) * 4
           r = lut[k]
           g = lut[k + 1]
@@ -157,7 +165,7 @@ export class CpuRenderer {
         } else {
           const phi = Math.atan2(my[id], mx[id]) / TAU
           const k = (Math.floor((phi - Math.floor(phi)) * LUT_SIZE) % LUT_SIZE) * 4
-          const z = mz[id] * MZ_SHADE
+          const z = sharpMz(mz[id]) * MZ_SHADE
           const target = z > 0 ? 255 : 0
           const f = Math.abs(z)
           r = lut[k] + (target - lut[k]) * f

@@ -40,54 +40,60 @@ export const SCALES = {
 //  (forme, rapport de fréquence, sens du désaccord, niveau) ; chord : degrés
 //  de l'accord ; progression : suite d'accords ; mode(f) : gamme en « auto » ;
 //  rotation : circulation des voix dans l'espace.
+// Couleur générale : chaleureuse, dans l'esprit d'une musique de méditation.
+// Gamme pentatonique majeure par défaut (aucun demi-ton : rien ne frotte),
+// accords sans tension, désaccords faibles, réverbération moyenne.
 export const PROFILES = {
-  // Le trou : un skyrmion est un creux dans l'aimantation. Grave et sourd
-  // (sinus, octave basse, filtre fermé, sous-basse permanente).
+  // Le trou : un skyrmion est un creux dans l'aimantation. Rond et doux
+  // (sinus et triangle, filtre assez fermé, sous-basse légère).
   skyrmion: {
-    octave: -1,
+    octave: 0,
     voice: [
       { type: 'sine', ratio: 1, cents: 0, level: 0.5 },
       { type: 'triangle', ratio: 1, cents: -1, level: 0.3 },
-      { type: 'sine', ratio: 2, cents: 1, level: 0.06 },
+      { type: 'sine', ratio: 2, cents: 1, level: 0.12 },
     ],
     chord: [0, 2, 4, 6, 8],
     progression: [0, 3, 5, 4, 1, 2],
-    mode: (f) => (f.mz > 0.5 ? 'dorian' : f.mz > -0.5 ? 'aeolian' : 'phrygian'),
-    detune: [2, 8],
-    filter: { base: 260, act: 1800, motifs: 500, q: 0.7 },
+    // Pentatonique majeure par défaut ; majeur (accords plus riches) si le
+    // film pointe nettement vers le haut, mixolydien (plus doux) vers le bas.
+    mode: (f) => (f.mz > 0.5 ? 'ionian' : f.mz > -0.5 ? 'penta' : 'mixolydian'),
+    detune: [1, 3],
+    filter: { base: 650, act: 1800, motifs: 500, q: 0.7 },
     lfo: { rate: 0.04, depth: 60 },
     rotation: { rate: 0.04, pan: 0.2, amp: 0.05, pitch: 0 },
     noise: { level: 0, freq: 3000, q: 1 },
-    delay: { time: 0.45, fb: 0.3, send: 0.12 },
-    reverb: 0.7,
-    sub: 0.14,
+    delay: { time: 0.45, fb: 0.25, send: 0.1 },
+    reverb: 0.5,
+    sub: 0.08,
   },
-  // Le dédale : dents de scie et carré grave, modes sombres, filtre résonant
-  // qui pulse, souffle granuleux qui suit les parois, échos denses.
+  // Le dédale : une dent de scie adoucie par un triangle et un sinus grave,
+  // filtre qui respire, souffle léger qui suit les parois, échos.
   labyrinth: {
     octave: 0,
     voice: [
-      { type: 'sawtooth', ratio: 1, cents: -1, level: 0.3 },
-      { type: 'sawtooth', ratio: 1, cents: 1, level: 0.3 },
-      { type: 'square', ratio: 0.5, cents: 0, level: 0.2 },
+      { type: 'sawtooth', ratio: 1, cents: -1, level: 0.18 },
+      { type: 'triangle', ratio: 1, cents: 1, level: 0.35 },
+      { type: 'sine', ratio: 0.5, cents: 0, level: 0.3 },
     ],
     chord: [0, 2, 4, 6, 8],
-    progression: [0, 5, 3, 6, 4, 2],
-    mode: (f) => (f.mz > 0.3 ? 'dorian' : f.mz > -0.3 ? 'aeolian' : 'phrygian'),
-    detune: [8, 30],
-    filter: { base: 200, act: 2200, motifs: 1200, q: 4 },
-    lfo: { rate: 0.22, depth: 350 },
+    progression: [0, 5, 3, 1, 4, 2],
+    mode: (f) => (f.mz > 0.3 ? 'ionian' : f.mz > -0.3 ? 'penta' : 'mixolydian'),
+    detune: [3, 9],
+    filter: { base: 650, act: 2000, motifs: 900, q: 1 },
+    lfo: { rate: 0.12, depth: 250 },
     rotation: { rate: 0.1, pan: 0.25, amp: 0.1, pitch: 0 },
-    noise: { level: 0.06, freq: 700, q: 0.8 },
-    delay: { time: 0.62, fb: 0.5, send: 0.3 },
-    reverb: 0.6,
+    noise: { level: 0.025, freq: 1400, q: 0.8 },
+    delay: { time: 0.62, fb: 0.35, send: 0.22 },
+    reverb: 0.45,
     sub: 0,
   },
   // Le tourbillon : orgue doux (quinte ajoutée), accords en quartes. Les voix
-  // tournent autour de l'auditeur, chacune décalée en phase (panoramique,
-  // volume et légère hauteur, comme une cabine Leslie), dans le sens de
-  // l'enroulement de l'aimantation ; plus vite quand le film s'agite. Sans
-  // enroulement (aimantation couchée uniforme), la rotation s'efface.
+  // tournent autour de l'auditeur, chacune décalée en phase (panoramique et
+  // volume, comme une cabine Leslie, avec un très léger effet Doppler), dans
+  // le sens de l'enroulement de l'aimantation ; plus vite quand le film
+  // s'agite. Sans enroulement (aimantation couchée uniforme), la rotation
+  // s'efface.
   vortex: {
     octave: 0,
     voice: [
@@ -97,14 +103,14 @@ export const PROFILES = {
     ],
     chord: [0, 3, 6, 9, 12],
     progression: [0, 4, 1, 5, 3],
-    mode: (f) => (f.inPlane > 0.25 ? 'lydian' : 'mixolydian'),
-    detune: [3, 8],
-    filter: { base: 600, act: 2500, motifs: 300, q: 2 },
+    mode: (f) => (f.inPlane > 0.25 ? 'ionian' : 'penta'),
+    detune: [2, 4],
+    filter: { base: 1200, act: 2500, motifs: 300, q: 1.2 },
     lfo: { rate: 0.08, depth: 150 },
-    rotation: { rate: 0.15, pan: 0.9, amp: 0.35, pitch: 6 },
-    noise: { level: 0.025, freq: 2500, q: 2 },
-    delay: { time: 0.5, fb: 0.45, send: 0.25 },
-    reverb: 0.8,
+    rotation: { rate: 0.15, pan: 0.9, amp: 0.3, pitch: 2 },
+    noise: { level: 0.012, freq: 2500, q: 2 },
+    delay: { time: 0.5, fb: 0.35, send: 0.2 },
+    reverb: 0.55,
     sub: 0,
   },
 }
@@ -184,7 +190,7 @@ export class AmbientEngine {
 
     // Réverbération longue + délai filtré, en parallèle du signal direct.
     this.reverb = ctx.createConvolver()
-    this.reverb.buffer = impulse(ctx, 7)
+    this.reverb.buffer = impulse(ctx, 5)
     this.wet = ctx.createGain()
     this.reverb.connect(this.wet).connect(this.master)
 
@@ -192,7 +198,7 @@ export class AmbientEngine {
     this.fb = ctx.createGain()
     const fbTone = ctx.createBiquadFilter()
     fbTone.type = 'lowpass'
-    fbTone.frequency.value = 1800
+    fbTone.frequency.value = 3200
     this.delay.connect(fbTone).connect(this.fb).connect(this.delay)
     this.delaySend = ctx.createGain()
     this.delaySend.connect(this.delay)
@@ -297,7 +303,7 @@ export class AmbientEngine {
     this.progression = PROFILES.skyrmion.progression
     this.key = 0 // transposition accumulée par les grands pics (demi-tons)
     this.voicing = VOICINGS[0]
-    this.mode = 'dorian'
+    this.mode = 'penta'
     this.nNotes = 3
     this.poleShift = 0
     this.detune = 4
@@ -384,7 +390,7 @@ export class AmbientEngine {
         voice.g.gain.setTargetAtTime(on, t, instant ? 0.01 : 2.5)
       })
     }
-    this.sub.frequency.setTargetAtTime(midiHz(root - 24), t, instant ? 0.01 : 0.8)
+    this.sub.frequency.setTargetAtTime(midiHz(root - 12), t, instant ? 0.01 : 0.8)
   }
 
   tune(voice, tau) {
@@ -420,7 +426,7 @@ export class AmbientEngine {
     this.lastChange = t
     this.applyChord(false)
     // Accent : le filtre s'ouvre d'un coup puis se referme (~2 s).
-    const accent = Math.min(2400, 600 * strength)
+    const accent = Math.min(1200, 400 * strength)
     this.filter.detune.cancelScheduledValues(t)
     this.filter.detune.setValueAtTime(accent, t)
     this.filter.detune.setTargetAtTime(0, t + 0.05, 0.8)
